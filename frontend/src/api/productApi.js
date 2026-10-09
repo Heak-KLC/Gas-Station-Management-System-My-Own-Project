@@ -25,6 +25,10 @@ export const getProduct = async (productId) => {
 // =========================================================
 // CREATE PRODUCT
 // =========================================================
+// productData can be:
+// - Normal JSON object
+// - FormData when uploading product image
+// =========================================================
 export const createProduct = async (productData) => {
     const response = await api.post(
         "/products",
@@ -37,10 +41,35 @@ export const createProduct = async (productData) => {
 // =========================================================
 // UPDATE PRODUCT
 // =========================================================
+// productData can be:
+// - Normal JSON object
+// - FormData when uploading/replacing product image
+//
+// We use POST + _method=PUT when FormData is used.
+// This helps Laravel correctly process multipart/form-data.
+// =========================================================
 export const updateProduct = async (
     productId,
     productData
 ) => {
+    // =====================================================
+    // If productData is FormData
+    // =====================================================
+    if (productData instanceof FormData) {
+        productData.append("_method", "PUT");
+
+        const response = await api.post(
+            `/products/${productId}`,
+            productData
+        );
+
+        return response.data;
+    }
+
+    // =====================================================
+    // If productData is normal JSON
+    // Keep the original PUT request.
+    // =====================================================
     const response = await api.put(
         `/products/${productId}`,
         productData
@@ -62,6 +91,7 @@ export const deleteProduct = async (productId) => {
 
 // =========================================================
 // ADJUST INVENTORY
+//
 // quantityChange:
 // +10 = Add 10 items
 // -5  = Remove 5 items

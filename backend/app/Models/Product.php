@@ -17,6 +17,7 @@ class Product extends Model
         'product_code',
         'barcode',
         'product_name',
+        'image',
         'category_id',
         'purchase_price',
         'selling_price',

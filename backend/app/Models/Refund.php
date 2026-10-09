@@ -4,6 +4,8 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use App\Models\FuelSale;
+use App\Models\StoreSale;
 
 class Refund extends Model
 {
@@ -43,4 +45,24 @@ class Refund extends Model
      * original_sale_id and original_store_sale_id
      * are not foreign keys in the supplied database schema.
      */
+
+    // Get the original fuel sale associated with this refund.
+public function fuelSale()
+{
+    return $this->belongsTo(
+        FuelSale::class,
+        'original_sale_id',
+        'sale_id'
+    );
+}
+
+// Get the original store sale associated with this refund.
+public function storeSale()
+{
+    return $this->belongsTo(
+        StoreSale::class,
+        'original_store_sale_id',
+        'store_sale_id'
+    );
+}
 }

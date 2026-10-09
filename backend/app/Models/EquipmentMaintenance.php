@@ -12,6 +12,9 @@ class EquipmentMaintenance extends Model
     protected $table = 'equipment_maintenance';
 
     protected $primaryKey = 'maintenance_id';
+    // Use the created_at column, but this table has no updated_at column.
+    const CREATED_AT = 'created_at';
+    const UPDATED_AT = null;
 
     protected $fillable = [
         'performed_by',

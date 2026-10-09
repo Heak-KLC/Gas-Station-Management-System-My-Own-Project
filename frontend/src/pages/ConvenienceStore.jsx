@@ -13,7 +13,12 @@ import {
   Sparkles,
   Tag,
   Trash2,
+  Pencil,
+  PackagePlus,
+  History,
+  Minus,
 } from "lucide-react";
+
 import {
   BarChart,
   Bar,
@@ -25,6 +30,7 @@ import {
   Tooltip,
   CartesianGrid,
 } from "recharts";
+
 import { Panel } from "../components/ui";
 
 // =========================================================
@@ -34,7 +40,10 @@ import { Panel } from "../components/ui";
 import {
   getProducts,
   createProduct,
+  updateProduct,
   deleteProduct,
+  adjustProductInventory,
+  getProductInventoryLogs,
 } from "../api/productApi";
 
 // =========================================================
@@ -49,8 +58,9 @@ import {
 
 // =========================================================
 // Product Images
-// Images នៅតែរក្សាទុកនៅ Frontend
-// ព្រោះ products table មិនមាន image column
+//
+// Images ចាស់ៗដែលមិនមាន image នៅ Database
+// នឹងប្រើ Local Frontend Images ជា fallback.
 // =========================================================
 import imgSourCreamChips from "../image/chips.png";
 import imgSnacks from "../image/snacks.png";
@@ -64,7 +74,6 @@ import imgChiliPaste from "../image/chili-paste.png";
 
 // =========================================================
 // Category Icons
-// Category ថ្មីដែលមិនមានក្នុង mapping នឹងប្រើ Tag
 // =========================================================
 const CATEGORY_ICONS = {
   Beverages: Beer,
@@ -113,10 +122,6 @@ function Modal({ title, onClose, children }) {
 
 // =========================================================
 // Empty Product Form
-//
-// IMPORTANT:
-// categoryId គឺជា category_id ពិតពី Database
-// មិនមែន category name ទៀតទេ
 // =========================================================
 const EMPTY_PRODUCT_FORM = {
   productCode: "",
@@ -129,13 +134,15 @@ const EMPTY_PRODUCT_FORM = {
   minStock: "",
   unit: "piece",
   taxRate: "",
+  image: null,
+  imagePreview: "",
 };
 
 // =========================================================
 // Product Image Mapping
 //
-// Database មិនមាន image_url
-// ដូច្នេះ Image ត្រូវរកពី Product Name នៅ Frontend
+// ប្រើសម្រាប់ Product ចាស់ៗដែលមិនមាន image
+// នៅក្នុង Database.
 // =========================================================
 const getProductImage = (productName) => {
   const name = String(productName || "").toLowerCase();
@@ -144,10 +151,11 @@ const getProductImage = (productName) => {
     return imgSourCreamChips;
   }
 
-  if (
-    name.includes("snack") ||
-    name.includes("nuts")
-  ) {
+  if (name.includes("nuts")) {
+    return imgNuts;
+  }
+
+  if (name.includes("snack")) {
     return imgSnacks;
   }
 
@@ -175,26 +183,11 @@ const getProductImage = (productName) => {
     return imgChiliPaste;
   }
 
-  return imgSnacks;
+  return null;
 };
 
 // =========================================================
 // Convert Laravel Product → UI Product
-//
-// Database:
-// product_id
-// product_name
-// category.category_name
-// selling_price
-// quantity_in_stock
-//
-// UI:
-// id
-// name
-// category
-// price
-// stock
-// image
 // =========================================================
 const mapProductToUi = (product) => ({
   id: product.product_id,
@@ -211,35 +204,45 @@ const mapProductToUi = (product) => ({
     product.category?.category_name ||
     "Uncategorized",
 
-  purchasePrice:
-    Number(product.purchase_price || 0),
+  purchasePrice: Number(
+    product.purchase_price || 0
+  ),
 
-  price:
-    Number(product.selling_price || 0),
+  price: Number(
+    product.selling_price || 0
+  ),
 
-  stock:
-    Number(product.quantity_in_stock || 0),
+  stock: Number(
+    product.quantity_in_stock || 0
+  ),
 
-  minStock:
-    Number(product.min_stock_level || 0),
+  minStock: Number(
+    product.min_stock_level || 0
+  ),
 
-  unit:
-    product.unit || "piece",
+  unit: product.unit || "piece",
 
-  taxRate:
-    Number(product.tax_rate || 0),
+  taxRate: Number(
+    product.tax_rate || 0
+  ),
 
-  isActive:
-    Boolean(product.is_active),
+  isActive: Boolean(product.is_active),
 
-  // Image remains frontend-only
-  image: getProductImage(product.product_name),
+  // =======================================================
+  // Database Image
+  //
+  // If Laravel has image:
+  // http://127.0.0.1:8000/storage/products/xxxxx.jpg
+  //
+  // Otherwise use old local image.
+  // =======================================================
+  image: product.image
+    ? `http://127.0.0.1:8000/storage/${product.image}`
+    : getProductImage(product.product_name),
 });
 
 // =========================================================
 // Convert Laravel Category → UI Category
-//
-// យើងរក្សា object ពេញ ដើម្បីបាន category_id
 // =========================================================
 const mapCategoryToUi = (category) => ({
   id: category.category_id,
@@ -249,27 +252,95 @@ const mapCategoryToUi = (category) => ({
   productCount: category.products_count || 0,
 });
 
+// =========================================================
+// Convert Inventory Log → UI
+//
+// Backend field names can vary slightly depending on
+// ProductInventoryLog model/controller.
+//
+// We use fallback values so the UI remains safe.
+// =========================================================
+const mapInventoryLogToUi = (log) => ({
+  id:
+    log.inventory_log_id ??
+    log.id ??
+    Math.random(),
+
+  quantityChange: Number(
+    log.quantity_change ??
+    log.quantityChange ??
+    0
+  ),
+
+  quantityBefore: Number(
+    log.quantity_before ??
+    log.quantityBefore ??
+    0
+  ),
+
+  quantityAfter: Number(
+    log.quantity_after ??
+    log.quantityAfter ??
+    0
+  ),
+
+  reason:
+    log.reason ||
+    log.notes ||
+    "Inventory Adjustment",
+
+  createdBy:
+    log.created_by?.full_name ||
+    log.createdBy?.full_name ||
+    log.user?.full_name ||
+    "-",
+
+  createdAt:
+    log.created_at ||
+    log.createdAt ||
+    null,
+});
+
+// =========================================================
+// Format Date
+// =========================================================
+const formatDateTime = (value) => {
+  if (!value) {
+    return "-";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleString();
+};
+
+// =========================================================
+// Main Component
+// =========================================================
 export default function ConvenienceStore() {
+
   // =========================================================
   // Products
-  // ឥឡូវនេះមិនមាន initialProducts Static ទៀតទេ
   // =========================================================
   const [products, setProducts] = useState([]);
 
   // =========================================================
   // Categories
-  // ឥឡូវនេះមិនមាន initialCategories Static ទៀតទេ
   // =========================================================
   const [categories, setCategories] = useState([]);
 
   // =========================================================
-  // Loading State
+  // Loading
   // =========================================================
   const [loading, setLoading] = useState(true);
 
   // =========================================================
-  // Saving State
-  // ប្រើពេល Add Product / Add Category / Delete Category
+  // Saving
+  // Used by Add / Edit / Delete / Inventory
   // =========================================================
   const [saving, setSaving] = useState(false);
 
@@ -289,25 +360,90 @@ export default function ConvenienceStore() {
   const [isAddOpen, setIsAddOpen] = useState(false);
 
   // =========================================================
-  // Add Product Form
+  // Edit Product Modal
   // =========================================================
-  const [form, setForm] = useState(EMPTY_PRODUCT_FORM);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+
+  // =========================================================
+  // Product Form
+  //
+  // Same form is used for Add + Edit.
+  // =========================================================
+  const [form, setForm] = useState(
+    EMPTY_PRODUCT_FORM
+  );
+
+  // =========================================================
+  // Product Being Edited
+  // =========================================================
+  const [editingProduct, setEditingProduct] =
+    useState(null);
+
+  // =========================================================
+  // Delete Confirmation
+  // =========================================================
+  const [deleteProductTarget, setDeleteProductTarget] =
+    useState(null);
+
+  // =========================================================
+  // Inventory Adjustment Modal
+  // =========================================================
+  const [isInventoryOpen, setIsInventoryOpen] =
+    useState(false);
+
+  // =========================================================
+  // Product Used for Inventory Adjustment
+  // =========================================================
+  const [inventoryProduct, setInventoryProduct] =
+    useState(null);
+
+  // =========================================================
+  // Inventory Form
+  // =========================================================
+  const [inventoryForm, setInventoryForm] =
+  useState({
+    type: "add",
+    quantity: "",
+    reason: "purchase",
+  });
+
+  // =========================================================
+  // Inventory Logs Modal
+  // =========================================================
+  const [isLogsOpen, setIsLogsOpen] =
+    useState(false);
+
+  // =========================================================
+  // Inventory Logs
+  // =========================================================
+  const [inventoryLogs, setInventoryLogs] =
+    useState([]);
+
+  // =========================================================
+  // Loading Inventory Logs
+  // =========================================================
+  const [logsLoading, setLogsLoading] =
+    useState(false);
 
   // =========================================================
   // Manage Categories Modal
   // =========================================================
-  const [isManageCategoriesOpen, setIsManageCategoriesOpen] =
-    useState(false);
+  const [
+    isManageCategoriesOpen,
+    setIsManageCategoriesOpen,
+  ] = useState(false);
 
   // =========================================================
   // New Category Input
   // =========================================================
-  const [newCategory, setNewCategory] = useState("");
+  const [newCategory, setNewCategory] =
+    useState("");
 
   // =========================================================
   // Table Search
   // =========================================================
-  const [tableQuery, setTableQuery] = useState("");
+  const [tableQuery, setTableQuery] =
+    useState("");
 
   // =========================================================
   // Pagination
@@ -317,22 +453,14 @@ export default function ConvenienceStore() {
   const PAGE_SIZE = 5;
 
   // =========================================================
-  // Load Products + Categories
-  //
-  // useEffect runs once when ConvenienceStore is mounted.
+  // Load data when page opens
   // =========================================================
   useEffect(() => {
     loadConvenienceStoreData();
   }, []);
 
   // =========================================================
-  // LOAD CONVENIENCE STORE DATA
-  //
-  // GET:
-  // /api/products
-  // /api/product-categories
-  //
-  // Promise.all() makes both API requests together.
+  // LOAD PRODUCTS + CATEGORIES
   // =========================================================
   const loadConvenienceStoreData = async () => {
     try {
@@ -347,19 +475,11 @@ export default function ConvenienceStore() {
         getProductCategories(),
       ]);
 
-      // -------------------------------------------------------
-      // Laravel Products
-      // → UI Products
-      // -------------------------------------------------------
       const mappedProducts =
         Array.isArray(productsResponse)
           ? productsResponse.map(mapProductToUi)
           : [];
 
-      // -------------------------------------------------------
-      // Laravel Categories
-      // → UI Categories
-      // -------------------------------------------------------
       const mappedCategories =
         Array.isArray(categoriesResponse)
           ? categoriesResponse.map(mapCategoryToUi)
@@ -383,16 +503,43 @@ export default function ConvenienceStore() {
   };
 
   // =========================================================
+  // RESET PRODUCT FORM
+  // =========================================================
+  const resetProductForm = () => {
+    setForm({
+      ...EMPTY_PRODUCT_FORM,
+    });
+  };
+
+  // =========================================================
+  // GET VALIDATION ERROR MESSAGE
+  // =========================================================
+  const getApiErrorMessage = (
+    err,
+    fallbackMessage
+  ) => {
+    if (err?.response?.data?.errors) {
+      return Object.values(
+        err.response.data.errors
+      )
+        .flat()
+        .join(" ");
+    }
+
+    return (
+      err?.response?.data?.message ||
+      fallbackMessage
+    );
+  };
+
+  // =========================================================
   // ADD PRODUCT
   //
-  // Form → API Payload → Laravel → MySQL
+  // Form → FormData → Laravel
   // =========================================================
   async function handleAddProduct(e) {
     e.preventDefault();
 
-    // -------------------------------------------------------
-    // Basic Frontend Validation
-    // -------------------------------------------------------
     if (!form.name.trim()) {
       setError("Product name is required.");
       return;
@@ -407,62 +554,92 @@ export default function ConvenienceStore() {
       setSaving(true);
       setError("");
 
-      // -------------------------------------------------------
-      // Prepare data for Laravel
-      // -------------------------------------------------------
-      const payload = {
-        product_code:
-          form.productCode.trim() || null,
+      const formData = new FormData();
 
-        barcode:
-          form.barcode.trim() || null,
+      // Product Code
+      if (form.productCode.trim()) {
+        formData.append(
+          "product_code",
+          form.productCode.trim()
+        );
+      }
 
-        product_name:
-          form.name.trim(),
+      // Barcode
+      if (form.barcode.trim()) {
+        formData.append(
+          "barcode",
+          form.barcode.trim()
+        );
+      }
 
-        category_id:
-          Number(form.categoryId),
+      // Product Name
+      formData.append(
+        "product_name",
+        form.name.trim()
+      );
 
-        purchase_price:
-          Number(form.purchasePrice || 0),
+      // Category
+      formData.append(
+        "category_id",
+        form.categoryId
+      );
 
-        selling_price:
-          Number(form.price || 0),
+      // Purchase Price
+      formData.append(
+        "purchase_price",
+        form.purchasePrice || "0"
+      );
 
-        quantity_in_stock:
-          Number(form.stock || 0),
+      // Selling Price
+      formData.append(
+        "selling_price",
+        form.price || "0"
+      );
 
-        min_stock_level:
-          Number(form.minStock || 0),
+      // Initial Stock
+      formData.append(
+        "quantity_in_stock",
+        form.stock || "0"
+      );
 
-        unit:
-          form.unit.trim() || "piece",
+      // Minimum Stock
+      formData.append(
+        "min_stock_level",
+        form.minStock || "0"
+      );
 
-        tax_rate:
-          Number(form.taxRate || 0),
+      // Unit
+      formData.append(
+        "unit",
+        form.unit.trim() || "piece"
+      );
 
-        is_active: true,
-      };
+      // Tax
+      formData.append(
+        "tax_rate",
+        form.taxRate || "0"
+      );
 
-      // -------------------------------------------------------
-      // POST /api/products
-      // -------------------------------------------------------
-      await createProduct(payload);
+      // Active
+      formData.append(
+        "is_active",
+        "1"
+      );
 
-      // -------------------------------------------------------
-      // Reload Products + Categories
-      // ដើម្បីឱ្យ UI ទទួល Data ថ្មីពី Database
-      // -------------------------------------------------------
+      // Image
+      if (form.image) {
+        formData.append(
+          "image",
+          form.image
+        );
+      }
+
+      await createProduct(formData);
+
       await loadConvenienceStoreData();
 
-      // -------------------------------------------------------
-      // Reset Form
-      // -------------------------------------------------------
-      setForm(EMPTY_PRODUCT_FORM);
+      resetProductForm();
 
-      // -------------------------------------------------------
-      // Close Modal
-      // -------------------------------------------------------
       setIsAddOpen(false);
     } catch (err) {
       console.error(
@@ -471,8 +648,10 @@ export default function ConvenienceStore() {
       );
 
       setError(
-        err?.response?.data?.message ||
+        getApiErrorMessage(
+          err,
           "Failed to create product."
+        )
       );
     } finally {
       setSaving(false);
@@ -480,30 +659,82 @@ export default function ConvenienceStore() {
   }
 
   // =========================================================
-  // ADD CATEGORY
-  //
-  // New Category → Laravel API → MySQL
+  // OPEN EDIT PRODUCT
   // =========================================================
-  async function handleAddCategory(e) {
+  const openEditProduct = (product) => {
+    setError("");
+
+    setEditingProduct(product);
+
+    // -------------------------------------------------------
+    // Existing database image is NOT placed into
+    // form.image because form.image must be a File.
+    //
+    // We only use the existing URL as preview.
+    // -------------------------------------------------------
+    setForm({
+      productCode:
+        product.productCode || "",
+
+      barcode:
+        product.barcode === "-"
+          ? ""
+          : product.barcode || "",
+
+      name:
+        product.name || "",
+
+      categoryId:
+        product.categoryId
+          ? String(product.categoryId)
+          : "",
+
+      purchasePrice:
+        product.purchasePrice ?? "",
+
+      price:
+        product.price ?? "",
+
+      stock:
+        product.stock ?? "",
+
+      minStock:
+        product.minStock ?? "",
+
+      unit:
+        product.unit || "piece",
+
+      taxRate:
+        product.taxRate ?? "",
+
+      image: null,
+
+      imagePreview:
+        product.image || "",
+    });
+
+    setIsEditOpen(true);
+  };
+
+  // =========================================================
+  // EDIT PRODUCT
+  //
+  // Uses FormData because image can be replaced.
+  // =========================================================
+  async function handleEditProduct(e) {
     e.preventDefault();
 
-    const trimmed = newCategory.trim();
-
-    if (!trimmed) {
+    if (!editingProduct) {
       return;
     }
 
-    // -------------------------------------------------------
-    // Check duplicate category on frontend first
-    // -------------------------------------------------------
-    const duplicate = categories.some(
-      (category) =>
-        category.name.toLowerCase() ===
-        trimmed.toLowerCase()
-    );
+    if (!form.name.trim()) {
+      setError("Product name is required.");
+      return;
+    }
 
-    if (duplicate) {
-      setError("This category already exists.");
+    if (!form.categoryId) {
+      setError("Please select a category.");
       return;
     }
 
@@ -511,34 +742,406 @@ export default function ConvenienceStore() {
       setSaving(true);
       setError("");
 
-      // -------------------------------------------------------
-      // Generate Category Code
-      // Example:
-      // Personal Care → PERSONAL_CARE
-      // -------------------------------------------------------
-      const categoryCode = trimmed
-        .toUpperCase()
-        .replace(/[^A-Z0-9]+/g, "_")
-        .replace(/^_|_$/g, "");
+      const formData = new FormData();
 
-      // -------------------------------------------------------
-      // POST /api/product-categories
-      // -------------------------------------------------------
+      // -----------------------------------------------------
+      // Product Code
+      // -----------------------------------------------------
+      formData.append(
+        "product_code",
+        form.productCode.trim()
+      );
+
+      // -----------------------------------------------------
+      // Barcode
+      // -----------------------------------------------------
+      formData.append(
+        "barcode",
+        form.barcode.trim()
+      );
+
+      // -----------------------------------------------------
+      // Product Name
+      // -----------------------------------------------------
+      formData.append(
+        "product_name",
+        form.name.trim()
+      );
+
+      // -----------------------------------------------------
+      // Category
+      // -----------------------------------------------------
+      formData.append(
+        "category_id",
+        form.categoryId
+      );
+
+      // -----------------------------------------------------
+      // Prices
+      // -----------------------------------------------------
+      formData.append(
+        "purchase_price",
+        form.purchasePrice || "0"
+      );
+
+      formData.append(
+        "selling_price",
+        form.price || "0"
+      );
+
+      // -----------------------------------------------------
+      // Stock
+      //
+      // IMPORTANT:
+      // This keeps current Edit behavior.
+      //
+      // For normal stock movement, use Inventory
+      // Adjustment instead.
+      // -----------------------------------------------------
+      formData.append(
+        "quantity_in_stock",
+        form.stock || "0"
+      );
+
+      // -----------------------------------------------------
+      // Minimum Stock
+      // -----------------------------------------------------
+      formData.append(
+        "min_stock_level",
+        form.minStock || "0"
+      );
+
+      // -----------------------------------------------------
+      // Unit
+      // -----------------------------------------------------
+      formData.append(
+        "unit",
+        form.unit.trim() || "piece"
+      );
+
+      // -----------------------------------------------------
+      // Tax
+      // -----------------------------------------------------
+      formData.append(
+        "tax_rate",
+        form.taxRate || "0"
+      );
+
+      // -----------------------------------------------------
+      // Active Status
+      // -----------------------------------------------------
+      formData.append(
+        "is_active",
+        editingProduct.isActive ? "1" : "0"
+      );
+
+      // -----------------------------------------------------
+      // Replace Image
+      //
+      // Only append when a NEW File is selected.
+      // -----------------------------------------------------
+      if (form.image) {
+        formData.append(
+          "image",
+          form.image
+        );
+      }
+
+      await updateProduct(
+        editingProduct.id,
+        formData
+      );
+
+      await loadConvenienceStoreData();
+
+      resetProductForm();
+
+      setEditingProduct(null);
+
+      setIsEditOpen(false);
+    } catch (err) {
+      console.error(
+        "Failed to update product:",
+        err
+      );
+
+      setError(
+        getApiErrorMessage(
+          err,
+          "Failed to update product."
+        )
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // =========================================================
+  // OPEN DELETE CONFIRMATION
+  // =========================================================
+  const openDeleteProduct = (product) => {
+    setError("");
+    setDeleteProductTarget(product);
+  };
+
+  // =========================================================
+  // DELETE PRODUCT
+  // =========================================================
+  async function handleDeleteProduct() {
+    if (!deleteProductTarget) {
+      return;
+    }
+
+    try {
+      setSaving(true);
+      setError("");
+
+      await deleteProduct(
+        deleteProductTarget.id
+      );
+
+      await loadConvenienceStoreData();
+
+      setDeleteProductTarget(null);
+    } catch (err) {
+      console.error(
+        "Failed to delete product:",
+        err
+      );
+
+      setError(
+        getApiErrorMessage(
+          err,
+          "This product cannot be deleted."
+        )
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // =========================================================
+  // OPEN INVENTORY ADJUSTMENT
+  // =========================================================
+  const openInventoryAdjustment = (
+  product,
+  type = "add"
+) => {
+  setError("");
+
+  setInventoryProduct(product);
+
+  setInventoryForm({
+    type,
+    quantity: "",
+    // Add stock → purchase
+    // Remove stock → sale
+    reason:
+      type === "add"
+        ? "purchase"
+        : "sale",
+  });
+
+  setIsInventoryOpen(true);
+};
+
+  // =========================================================
+  // ADJUST INVENTORY
+  //
+  // Add:
+  // + quantity
+  //
+  // Remove:
+  // - quantity
+  //
+  // Backend will create ProductInventoryLog.
+  // =========================================================
+  async function handleInventoryAdjustment(e) {
+    e.preventDefault();
+
+    if (!inventoryProduct) {
+      return;
+    }
+
+    const quantity =
+      Number(inventoryForm.quantity);
+
+    if (!quantity || quantity <= 0) {
+      setError(
+        "Please enter a quantity greater than 0."
+      );
+      return;
+    }
+
+    if (
+      !inventoryForm.reason.trim()
+    ) {
+      setError(
+        "Please enter a reason."
+      );
+      return;
+    }
+
+    // -------------------------------------------------------
+    // Add = positive
+    // Remove = negative
+    // -------------------------------------------------------
+    const quantityChange =
+      inventoryForm.type === "add"
+        ? quantity
+        : -quantity;
+
+    // -------------------------------------------------------
+    // Prevent removing more stock than available.
+    // -------------------------------------------------------
+    if (
+      quantityChange < 0 &&
+      quantity > inventoryProduct.stock
+    ) {
+      setError(
+        `Cannot remove ${quantity}. Current stock is ${inventoryProduct.stock}.`
+      );
+      return;
+    }
+
+    try {
+      setSaving(true);
+      setError("");
+
+      await adjustProductInventory(
+        inventoryProduct.id,
+        {
+          quantity_change:
+            quantityChange,
+
+          reason:
+            inventoryForm.reason.trim(),
+        }
+      );
+
+      await loadConvenienceStoreData();
+
+      setInventoryProduct(null);
+
+      setInventoryForm({
+        type: "add",
+        quantity: "",
+        reason: "",
+      });
+
+      setIsInventoryOpen(false);
+    } catch (err) {
+      console.error(
+        "Failed to adjust inventory:",
+        err
+      );
+
+      setError(
+        getApiErrorMessage(
+          err,
+          "Failed to adjust inventory."
+        )
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // =========================================================
+  // OPEN INVENTORY LOGS
+  // =========================================================
+  const openInventoryLogs = async (
+    product
+  ) => {
+    try {
+      setLogsLoading(true);
+      setError("");
+
+      setInventoryProduct(product);
+
+      setIsLogsOpen(true);
+
+      const response =
+        await getProductInventoryLogs(
+          product.id
+        );
+
+      const logs =
+        Array.isArray(response)
+          ? response
+          : Array.isArray(response?.data)
+          ? response.data
+          : [];
+
+      setInventoryLogs(
+        logs.map(mapInventoryLogToUi)
+      );
+    } catch (err) {
+      console.error(
+        "Failed to load inventory logs:",
+        err
+      );
+
+      setError(
+        getApiErrorMessage(
+          err,
+          "Failed to load inventory logs."
+        )
+      );
+    } finally {
+      setLogsLoading(false);
+    }
+  };
+
+  // =========================================================
+  // ADD CATEGORY
+  // =========================================================
+  async function handleAddCategory(e) {
+    e.preventDefault();
+
+    const trimmed =
+      newCategory.trim();
+
+    if (!trimmed) {
+      return;
+    }
+
+    const duplicate =
+      categories.some(
+        (category) =>
+          category.name.toLowerCase() ===
+          trimmed.toLowerCase()
+      );
+
+    if (duplicate) {
+      setError(
+        "This category already exists."
+      );
+      return;
+    }
+
+    try {
+      setSaving(true);
+      setError("");
+
+      const categoryCode =
+        trimmed
+          .toUpperCase()
+          .replace(/[^A-Z0-9]+/g, "_")
+          .replace(/^_|_$/g, "");
+
       await createProductCategory({
         category_name: trimmed,
+
         category_code:
-          categoryCode || `CATEGORY_${Date.now()}`,
+          categoryCode ||
+          `CATEGORY_${Date.now()}`,
+
         description: null,
       });
 
-      // -------------------------------------------------------
-      // Reload data from Laravel
-      // -------------------------------------------------------
       await loadConvenienceStoreData();
 
-      // -------------------------------------------------------
-      // Clear input
-      // -------------------------------------------------------
       setNewCategory("");
     } catch (err) {
       console.error(
@@ -547,8 +1150,10 @@ export default function ConvenienceStore() {
       );
 
       setError(
-        err?.response?.data?.message ||
+        getApiErrorMessage(
+          err,
           "Failed to create category."
+        )
       );
     } finally {
       setSaving(false);
@@ -557,24 +1162,18 @@ export default function ConvenienceStore() {
 
   // =========================================================
   // DELETE CATEGORY
-  //
-  // Important:
-  // Backend will reject deletion if the category
-  // still contains products.
   // =========================================================
-  async function handleRemoveCategory(categoryId) {
+  async function handleRemoveCategory(
+    categoryId
+  ) {
     try {
       setSaving(true);
       setError("");
 
-      // -------------------------------------------------------
-      // DELETE /api/product-categories/{id}
-      // -------------------------------------------------------
-      await deleteProductCategory(categoryId);
+      await deleteProductCategory(
+        categoryId
+      );
 
-      // -------------------------------------------------------
-      // Reload real database data
-      // -------------------------------------------------------
       await loadConvenienceStoreData();
     } catch (err) {
       console.error(
@@ -583,37 +1182,10 @@ export default function ConvenienceStore() {
       );
 
       setError(
-        err?.response?.data?.message ||
+        getApiErrorMessage(
+          err,
           "This category cannot be deleted."
-      );
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  // =========================================================
-  // DELETE PRODUCT
-  //
-  // Currently not displayed as a button in the original UI,
-  // but this handler is ready for future Product actions.
-  // =========================================================
-  async function handleDeleteProduct(productId) {
-    try {
-      setSaving(true);
-      setError("");
-
-      await deleteProduct(productId);
-
-      await loadConvenienceStoreData();
-    } catch (err) {
-      console.error(
-        "Failed to delete product:",
-        err
-      );
-
-      setError(
-        err?.response?.data?.message ||
-          "This product cannot be deleted."
+        )
       );
     } finally {
       setSaving(false);
@@ -623,15 +1195,23 @@ export default function ConvenienceStore() {
   // =========================================================
   // TABLE FILTER
   // =========================================================
-  const filteredForTable = products.filter((p) => {
-    const search = tableQuery.toLowerCase();
+  const filteredForTable =
+    products.filter((p) => {
+      const search =
+        tableQuery.toLowerCase();
 
-    return (
-      p.name.toLowerCase().includes(search) ||
-      p.category.toLowerCase().includes(search) ||
-      p.barcode.toLowerCase().includes(search)
-    );
-  });
+      return (
+        p.name
+          .toLowerCase()
+          .includes(search) ||
+        p.category
+          .toLowerCase()
+          .includes(search) ||
+        p.barcode
+          .toLowerCase()
+          .includes(search)
+      );
+    });
 
   // =========================================================
   // TOTAL PAGES
@@ -639,17 +1219,19 @@ export default function ConvenienceStore() {
   const totalPages = Math.max(
     1,
     Math.ceil(
-      filteredForTable.length / PAGE_SIZE
+      filteredForTable.length /
+        PAGE_SIZE
     )
   );
 
   // =========================================================
   // CURRENT PAGE PRODUCTS
   // =========================================================
-  const pagedProducts = filteredForTable.slice(
-    (page - 1) * PAGE_SIZE,
-    page * PAGE_SIZE
-  );
+  const pagedProducts =
+    filteredForTable.slice(
+      (page - 1) * PAGE_SIZE,
+      page * PAGE_SIZE
+    );
 
   // =========================================================
   // TABLE RANGE
@@ -667,56 +1249,54 @@ export default function ConvenienceStore() {
   // =========================================================
   // PRODUCT GRID SEARCH
   // =========================================================
-  const visibleProducts = products.filter((p) => {
-    const search = query.toLowerCase();
+  const visibleProducts =
+    products.filter((p) => {
+      const search =
+        query.toLowerCase();
 
-    return (
-      p.name.toLowerCase().includes(search) ||
-      p.category.toLowerCase().includes(search)
-    );
-  });
+      return (
+        p.name
+          .toLowerCase()
+          .includes(search) ||
+        p.category
+          .toLowerCase()
+          .includes(search)
+      );
+    });
 
   // =========================================================
   // INVENTORY SUMMARY
-  //
-  // These values are calculated from real database products.
   // =========================================================
+  const totalItems =
+    products.length;
 
-  // Number of products
-  const totalItems = products.length;
+  const lowStockCount =
+    products.filter(
+      (product) =>
+        product.isActive &&
+        product.stock > 0 &&
+        product.stock <=
+          product.minStock
+    ).length;
 
-  // Products below minimum stock level
-  const lowStockCount = products.filter(
-    (product) =>
-      product.isActive &&
-      product.stock > 0 &&
-      product.stock <= product.minStock
-  ).length;
+  const outOfStockCount =
+    products.filter(
+      (product) =>
+        product.isActive &&
+        product.stock <= 0
+    ).length;
 
-  // Products with zero stock
-  const outOfStockCount = products.filter(
-    (product) =>
-      product.isActive &&
-      product.stock <= 0
-  ).length;
+  const discontinuedCount =
+    products.filter(
+      (product) =>
+        !product.isActive
+    ).length;
 
-  // Products marked inactive
-  const discontinuedCount = products.filter(
-    (product) =>
-      !product.isActive
-  ).length;
-
-  // =========================================================
-  // IMPORTANT:
-  // Database currently has no expiry_date.
-  //
-  // Therefore Near Expiry cannot be calculated from real data.
-  // We keep it as 0 instead of using fake/static data.
-  // =========================================================
+  // Database does not currently have expiry_date.
   const nearExpiryCount = 0;
 
   // =========================================================
-  // REAL INVENTORY CHART DATA
+  // INVENTORY CHART DATA
   // =========================================================
   const inventoryStatus = [
     {
@@ -741,8 +1321,11 @@ export default function ConvenienceStore() {
     },
   ];
 
+  // =========================================================
+  // RENDER
+  // =========================================================
   return (
-    <div className="space-y-4 p-6 bg-gray-300">
+    <div className="space-y-4 bg-gray-300 p-6">
 
       {/* =====================================================
           PAGE HEADER
@@ -755,7 +1338,7 @@ export default function ConvenienceStore() {
         <button
           onClick={() => {
             setError("");
-            setForm(EMPTY_PRODUCT_FORM);
+            resetProductForm();
             setIsAddOpen(true);
           }}
           className="flex items-center gap-1.5 rounded-lg bg-cyan-500 px-3 py-2 text-sm font-medium text-white hover:bg-cyan-600"
@@ -775,7 +1358,7 @@ export default function ConvenienceStore() {
       )}
 
       {/* =====================================================
-          LOADING MESSAGE
+          LOADING
           ===================================================== */}
       {loading ? (
         <Panel>
@@ -788,7 +1371,6 @@ export default function ConvenienceStore() {
 
           {/* =================================================
               LEFT COLUMN
-              Product Grid
               ================================================= */}
           <Panel>
 
@@ -802,7 +1384,9 @@ export default function ConvenienceStore() {
               <input
                 value={query}
                 onChange={(e) =>
-                  setQuery(e.target.value)
+                  setQuery(
+                    e.target.value
+                  )
                 }
                 placeholder="Search"
                 className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2 pl-9 pr-3 text-sm outline-none focus:border-cyan-400"
@@ -812,58 +1396,151 @@ export default function ConvenienceStore() {
             {/* Product Cards */}
             <div className="grid grid-cols-4 gap-3">
 
-              {visibleProducts.map((p) => (
-                <div
-                  key={p.id}
-                  className="rounded-lg border border-slate-100 bg-slate-50 p-2 text-left text-xs"
-                >
+              {visibleProducts.map(
+                (p) => (
+                  <div
+                    key={p.id}
+                    className="rounded-lg border border-slate-100 bg-slate-50 p-2 text-left text-xs"
+                  >
 
-                  {/* Product Image */}
-                  <div className="mb-2 flex h-20 items-center justify-center overflow-hidden rounded-md bg-white">
+                    {/* Product Image */}
+                    <div className="mb-2 flex h-20 items-center justify-center overflow-hidden rounded-md bg-white">
 
-                    {p.image ? (
-                      <img
-                        src={p.image}
-                        alt={p.name}
-                        className="h-full w-full object-contain p-1"
-                      />
-                    ) : (
-                      <span className="text-[10px] text-slate-400">
-                        No photo
+                      {p.image ? (
+                        <img
+                          src={p.image}
+                          alt={p.name}
+                          className="h-full w-full object-contain p-1"
+                        />
+                      ) : (
+                        <span className="text-[10px] text-slate-400">
+                          No photo
+                        </span>
+                      )}
+
+                    </div>
+
+                    {/* Product Name */}
+                    <div className="font-medium text-slate-700">
+                      {p.name}
+                    </div>
+
+                    {/* Category */}
+                    <div className="text-slate-400">
+                      Category:{" "}
+                      {p.category}
+                    </div>
+
+                    {/* Price + Stock */}
+                    <div className="mt-1 flex items-center justify-between">
+
+                      <span className="font-semibold text-slate-800">
+                        $
+                        {p.price.toFixed(
+                          2
+                        )}
                       </span>
-                    )}
+
+                      <span className="text-slate-400">
+                        Avail:{" "}
+                        {p.stock}
+                      </span>
+
+                    </div>
+
+                    {/* =================================================
+                        Product Actions
+                        ================================================= */}
+                    <div className="mt-2 flex items-center justify-end gap-1">
+
+                      {/* Edit */}
+                      <button
+                        onClick={() =>
+                          openEditProduct(
+                            p
+                          )
+                        }
+                        className="rounded-md p-1 text-slate-400 hover:bg-white hover:text-cyan-600"
+                        title="Edit Product"
+                      >
+                        <Pencil
+                          size={13}
+                        />
+                      </button>
+
+                      {/* Add Inventory */}
+                      <button
+                        onClick={() =>
+                          openInventoryAdjustment(
+                            p,
+                            "add"
+                          )
+                        }
+                        className="rounded-md p-1 text-slate-400 hover:bg-white hover:text-emerald-600"
+                        title="Add Stock"
+                      >
+                        <PackagePlus
+                          size={13}
+                        />
+                      </button>
+
+                      {/* Remove Inventory */}
+                      <button
+                        onClick={() =>
+                          openInventoryAdjustment(
+                            p,
+                            "remove"
+                          )
+                        }
+                        className="rounded-md p-1 text-slate-400 hover:bg-white hover:text-orange-600"
+                        title="Remove Stock"
+                      >
+                        <Minus
+                          size={13}
+                        />
+                      </button>
+
+                      {/* Inventory Logs */}
+                      <button
+                        onClick={() =>
+                          openInventoryLogs(
+                            p
+                          )
+                        }
+                        className="rounded-md p-1 text-slate-400 hover:bg-white hover:text-blue-600"
+                        title="Inventory History"
+                      >
+                        <History
+                          size={13}
+                        />
+                      </button>
+
+                      {/* Delete */}
+                      <button
+                        onClick={() =>
+                          openDeleteProduct(
+                            p
+                          )
+                        }
+                        className="rounded-md p-1 text-slate-400 hover:bg-white hover:text-rose-500"
+                        title="Delete Product"
+                      >
+                        <Trash2
+                          size={13}
+                        />
+                      </button>
+
+                    </div>
 
                   </div>
+                )
+              )}
 
-                  {/* Product Name */}
-                  <div className="font-medium text-slate-700">
-                    {p.name}
-                  </div>
-
-                  {/* Category */}
-                  <div className="text-slate-400">
-                    Category: {p.category}
-                  </div>
-
-                  {/* Price + Stock */}
-                  <div className="mt-1 flex items-center justify-between">
-
-                    <span className="font-semibold text-slate-800">
-                      ${p.price.toFixed(2)}
-                    </span>
-
-                    <span className="text-slate-400">
-                      Avail: {p.stock}
-                    </span>
-
-                  </div>
-                </div>
-              ))}
-
-              {/* No Search Result */}
-              {visibleProducts.length === 0 && (
+              {visibleProducts.length ===
+                0 && (
                 <div className="col-span-4 py-8 text-center text-xs text-slate-400">
-                  {products.length === 0
+                  {products.length ===
+                  0
                     ? "No products found in database."
                     : `No products match "${query}".`}
                 </div>
@@ -873,8 +1550,13 @@ export default function ConvenienceStore() {
 
             {/* Product Count */}
             <div className="mt-3 text-center text-xs text-slate-400">
-              Showing {visibleProducts.length} of{" "}
-              {products.length} items
+              Showing{" "}
+              {
+                visibleProducts.length
+              }{" "}
+              of{" "}
+              {products.length}{" "}
+              items
             </div>
 
           </Panel>
@@ -902,7 +1584,6 @@ export default function ConvenienceStore() {
                     setTableQuery(
                       e.target.value
                     );
-
                     setPage(1);
                   }}
                   placeholder="Search"
@@ -916,6 +1597,7 @@ export default function ConvenienceStore() {
 
                   <thead>
                     <tr className="text-slate-400">
+
                       <th className="pb-2 font-medium">
                         ID
                       </th>
@@ -935,6 +1617,11 @@ export default function ConvenienceStore() {
                       <th className="pb-2 font-medium">
                         Stock Quantity
                       </th>
+
+                      <th className="pb-2 font-medium">
+                        Actions
+                      </th>
+
                     </tr>
                   </thead>
 
@@ -960,11 +1647,79 @@ export default function ConvenienceStore() {
                           </td>
 
                           <td className="py-2 font-medium text-slate-700">
-                            ${p.price.toFixed(2)}
+                            $
+                            {p.price.toFixed(
+                              2
+                            )}
                           </td>
 
                           <td className="py-2 text-slate-600">
                             {p.stock}
+                          </td>
+
+                          <td className="py-2">
+
+                            <div className="flex items-center gap-1">
+
+                              <button
+                                onClick={() =>
+                                  openEditProduct(
+                                    p
+                                  )
+                                }
+                                className="rounded p-1 text-slate-400 hover:text-cyan-600"
+                                title="Edit"
+                              >
+                                <Pencil
+                                  size={13}
+                                />
+                              </button>
+
+                              <button
+                                onClick={() =>
+                                  openInventoryAdjustment(
+                                    p,
+                                    "add"
+                                  )
+                                }
+                                className="rounded p-1 text-slate-400 hover:text-emerald-600"
+                                title="Inventory"
+                              >
+                                <PackagePlus
+                                  size={13}
+                                />
+                              </button>
+
+                              <button
+                                onClick={() =>
+                                  openInventoryLogs(
+                                    p
+                                  )
+                                }
+                                className="rounded p-1 text-slate-400 hover:text-blue-600"
+                                title="History"
+                              >
+                                <History
+                                  size={13}
+                                />
+                              </button>
+
+                              <button
+                                onClick={() =>
+                                  openDeleteProduct(
+                                    p
+                                  )
+                                }
+                                className="rounded p-1 text-slate-400 hover:text-rose-500"
+                                title="Delete"
+                              >
+                                <Trash2
+                                  size={13}
+                                />
+                              </button>
+
+                            </div>
+
                           </td>
 
                         </tr>
@@ -981,9 +1736,15 @@ export default function ConvenienceStore() {
               <div className="mt-3 flex items-center justify-between text-xs text-slate-400">
 
                 <span>
-                  Showing {rangeStart} to{" "}
-                  {rangeEnd} of{" "}
-                  {filteredForTable.length} items
+                  Showing{" "}
+                  {rangeStart}{" "}
+                  to{" "}
+                  {rangeEnd}{" "}
+                  of{" "}
+                  {
+                    filteredForTable.length
+                  }{" "}
+                  items
                 </span>
 
                 <div className="flex items-center gap-1">
@@ -994,14 +1755,17 @@ export default function ConvenienceStore() {
 
                   <button
                     onClick={() =>
-                      setPage((p) =>
-                        Math.max(
-                          1,
-                          p - 1
-                        )
+                      setPage(
+                        (p) =>
+                          Math.max(
+                            1,
+                            p - 1
+                          )
                       )
                     }
-                    disabled={page === 1}
+                    disabled={
+                      page === 1
+                    }
                     className="rounded border border-slate-200 p-1 hover:bg-slate-50 disabled:opacity-40"
                   >
                     <ChevronLeft
@@ -1015,15 +1779,17 @@ export default function ConvenienceStore() {
 
                   <button
                     onClick={() =>
-                      setPage((p) =>
-                        Math.min(
-                          totalPages,
-                          p + 1
-                        )
+                      setPage(
+                        (p) =>
+                          Math.min(
+                            totalPages,
+                            p + 1
+                          )
                       )
                     }
                     disabled={
-                      page === totalPages
+                      page ===
+                      totalPages
                     }
                     className="rounded border border-slate-200 p-1 hover:bg-slate-50 disabled:opacity-40"
                   >
@@ -1042,9 +1808,7 @@ export default function ConvenienceStore() {
                 ================================================= */}
             <div className="grid grid-cols-2 gap-4">
 
-              {/* =================================================
-                  PRODUCT CATEGORY
-                  ================================================= */}
+              {/* PRODUCT CATEGORY */}
               <Panel
                 title="Product Category"
                 action={
@@ -1076,7 +1840,9 @@ export default function ConvenienceStore() {
 
                       return (
                         <li
-                          key={category.id}
+                          key={
+                            category.id
+                          }
                           className="flex items-center gap-2"
                         >
                           <Icon
@@ -1084,13 +1850,16 @@ export default function ConvenienceStore() {
                             className="text-slate-400"
                           />
 
-                          {category.name}
+                          {
+                            category.name
+                          }
                         </li>
                       );
                     }
                   )}
 
-                  {categories.length === 0 && (
+                  {categories.length ===
+                    0 && (
                     <li className="py-4 text-center text-xs text-slate-400">
                       No categories yet.
                     </li>
@@ -1100,9 +1869,7 @@ export default function ConvenienceStore() {
 
               </Panel>
 
-              {/* =================================================
-                  INVENTORY STATUS
-                  ================================================= */}
+              {/* INVENTORY STATUS */}
               <Panel title="Inventory Status">
 
                 <ResponsiveContainer
@@ -1111,7 +1878,9 @@ export default function ConvenienceStore() {
                 >
 
                   <BarChart
-                    data={inventoryStatus}
+                    data={
+                      inventoryStatus
+                    }
                   >
 
                     <CartesianGrid
@@ -1153,7 +1922,9 @@ export default function ConvenienceStore() {
                       {inventoryStatus.map(
                         (entry) => (
                           <Cell
-                            key={entry.label}
+                            key={
+                              entry.label
+                            }
                             fill={
                               STATUS_COLORS[
                                 entry.label
@@ -1202,7 +1973,9 @@ export default function ConvenienceStore() {
         >
 
           <form
-            onSubmit={handleAddProduct}
+            onSubmit={
+              handleAddProduct
+            }
             className="space-y-3 text-sm"
           >
 
@@ -1213,7 +1986,9 @@ export default function ConvenienceStore() {
               </label>
 
               <input
-                value={form.productCode}
+                value={
+                  form.productCode
+                }
                 onChange={(e) =>
                   setForm({
                     ...form,
@@ -1233,7 +2008,9 @@ export default function ConvenienceStore() {
               </label>
 
               <input
-                value={form.barcode}
+                value={
+                  form.barcode
+                }
                 onChange={(e) =>
                   setForm({
                     ...form,
@@ -1258,12 +2035,74 @@ export default function ConvenienceStore() {
                 onChange={(e) =>
                   setForm({
                     ...form,
-                    name: e.target.value,
+                    name:
+                      e.target.value,
                   })
                 }
                 placeholder="Snacks - Salted Peanuts"
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 outline-none focus:border-cyan-400"
               />
+            </div>
+
+            {/* Product Image */}
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-500">
+                Product Image
+              </label>
+
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/jpg,image/webp"
+                onChange={(e) => {
+                  const file =
+                    e.target.files?.[0];
+
+                  if (!file) {
+                    return;
+                  }
+
+                  if (
+                    file.size >
+                    2 *
+                      1024 *
+                      1024
+                  ) {
+                    setError(
+                      "Image size must be less than 2MB."
+                    );
+                    return;
+                  }
+
+                  setForm({
+                    ...form,
+                    image: file,
+                    imagePreview:
+                      URL.createObjectURL(
+                        file
+                      ),
+                  });
+
+                  setError("");
+                }}
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+              />
+
+              {form.imagePreview && (
+                <div className="mt-2 flex justify-center rounded-lg border border-slate-200 bg-slate-50 p-2">
+                  <img
+                    src={
+                      form.imagePreview
+                    }
+                    alt="Product Preview"
+                    className="h-28 w-28 object-contain"
+                  />
+                </div>
+              )}
+
+              <p className="mt-1 text-[10px] text-slate-400">
+                JPG, JPEG, PNG or
+                WEBP. Maximum 2MB.
+              </p>
             </div>
 
             {/* Category */}
@@ -1274,7 +2113,9 @@ export default function ConvenienceStore() {
 
               <select
                 required
-                value={form.categoryId}
+                value={
+                  form.categoryId
+                }
                 onChange={(e) =>
                   setForm({
                     ...form,
@@ -1284,7 +2125,6 @@ export default function ConvenienceStore() {
                 }
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 outline-none focus:border-cyan-400"
               >
-
                 <option value="">
                   Select Category
                 </option>
@@ -1292,18 +2132,23 @@ export default function ConvenienceStore() {
                 {categories.map(
                   (category) => (
                     <option
-                      key={category.id}
-                      value={category.id}
+                      key={
+                        category.id
+                      }
+                      value={
+                        category.id
+                      }
                     >
-                      {category.name}
+                      {
+                        category.name
+                      }
                     </option>
                   )
                 )}
-
               </select>
             </div>
 
-            {/* Purchase Price + Selling Price */}
+            {/* Prices */}
             <div className="grid grid-cols-2 gap-2">
 
               <div>
@@ -1341,7 +2186,9 @@ export default function ConvenienceStore() {
                   min="0"
                   step="0.01"
                   required
-                  value={form.price}
+                  value={
+                    form.price
+                  }
                   onChange={(e) =>
                     setForm({
                       ...form,
@@ -1356,7 +2203,7 @@ export default function ConvenienceStore() {
 
             </div>
 
-            {/* Stock + Minimum Stock */}
+            {/* Stock */}
             <div className="grid grid-cols-2 gap-2">
 
               <div>
@@ -1369,7 +2216,9 @@ export default function ConvenienceStore() {
                   min="0"
                   step="0.01"
                   required
-                  value={form.stock}
+                  value={
+                    form.stock
+                  }
                   onChange={(e) =>
                     setForm({
                       ...form,
@@ -1391,7 +2240,9 @@ export default function ConvenienceStore() {
                   type="number"
                   min="0"
                   step="0.01"
-                  value={form.minStock}
+                  value={
+                    form.minStock
+                  }
                   onChange={(e) =>
                     setForm({
                       ...form,
@@ -1415,7 +2266,9 @@ export default function ConvenienceStore() {
                 </label>
 
                 <input
-                  value={form.unit}
+                  value={
+                    form.unit
+                  }
                   onChange={(e) =>
                     setForm({
                       ...form,
@@ -1438,7 +2291,9 @@ export default function ConvenienceStore() {
                   min="0"
                   max="100"
                   step="0.01"
-                  value={form.taxRate}
+                  value={
+                    form.taxRate
+                  }
                   onChange={(e) =>
                     setForm({
                       ...form,
@@ -1485,6 +2340,788 @@ export default function ConvenienceStore() {
       )}
 
       {/* =========================================================
+          EDIT PRODUCT MODAL
+          ========================================================= */}
+      {isEditOpen && (
+        <Modal
+          title="Edit Product"
+          onClose={() => {
+            if (!saving) {
+              setIsEditOpen(false);
+              setEditingProduct(
+                null
+              );
+              resetProductForm();
+            }
+          }}
+        >
+
+          <form
+            onSubmit={
+              handleEditProduct
+            }
+            className="space-y-3 text-sm"
+          >
+
+            {/* Product Code */}
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-500">
+                Product Code
+              </label>
+
+              <input
+                value={
+                  form.productCode
+                }
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    productCode:
+                      e.target.value,
+                  })
+                }
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 outline-none focus:border-cyan-400"
+              />
+            </div>
+
+            {/* Barcode */}
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-500">
+                Barcode
+              </label>
+
+              <input
+                value={
+                  form.barcode
+                }
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    barcode:
+                      e.target.value,
+                  })
+                }
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 outline-none focus:border-cyan-400"
+              />
+            </div>
+
+            {/* Product Name */}
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-500">
+                Product Name
+              </label>
+
+              <input
+                required
+                value={form.name}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    name:
+                      e.target.value,
+                  })
+                }
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 outline-none focus:border-cyan-400"
+              />
+            </div>
+
+            {/* Product Image */}
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-500">
+                Product Image
+              </label>
+
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/jpg,image/webp"
+                onChange={(e) => {
+                  const file =
+                    e.target.files?.[0];
+
+                  if (!file) {
+                    return;
+                  }
+
+                  if (
+                    file.size >
+                    2 *
+                      1024 *
+                      1024
+                  ) {
+                    setError(
+                      "Image size must be less than 2MB."
+                    );
+                    return;
+                  }
+
+                  setForm({
+                    ...form,
+                    image: file,
+                    imagePreview:
+                      URL.createObjectURL(
+                        file
+                      ),
+                  });
+
+                  setError("");
+                }}
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+              />
+
+              {/* Existing / New Image */}
+              {form.imagePreview && (
+                <div className="mt-2 flex justify-center rounded-lg border border-slate-200 bg-slate-50 p-2">
+                  <img
+                    src={
+                      form.imagePreview
+                    }
+                    alt="Product Preview"
+                    className="h-28 w-28 object-contain"
+                  />
+                </div>
+              )}
+
+              <p className="mt-1 text-[10px] text-slate-400">
+                Select a new image only
+                if you want to replace
+                the current image.
+              </p>
+            </div>
+
+            {/* Category */}
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-500">
+                Category
+              </label>
+
+              <select
+                required
+                value={
+                  form.categoryId
+                }
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    categoryId:
+                      e.target.value,
+                  })
+                }
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 outline-none focus:border-cyan-400"
+              >
+
+                <option value="">
+                  Select Category
+                </option>
+
+                {categories.map(
+                  (category) => (
+                    <option
+                      key={
+                        category.id
+                      }
+                      value={
+                        category.id
+                      }
+                    >
+                      {
+                        category.name
+                      }
+                    </option>
+                  )
+                )}
+
+              </select>
+            </div>
+
+            {/* Prices */}
+            <div className="grid grid-cols-2 gap-2">
+
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-500">
+                  Purchase Price ($)
+                </label>
+
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  required
+                  value={
+                    form.purchasePrice
+                  }
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      purchasePrice:
+                        e.target.value,
+                    })
+                  }
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 outline-none focus:border-cyan-400"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-500">
+                  Selling Price ($)
+                </label>
+
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  required
+                  value={
+                    form.price
+                  }
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      price:
+                        e.target.value,
+                    })
+                  }
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 outline-none focus:border-cyan-400"
+                />
+              </div>
+
+            </div>
+
+            {/* Stock + Minimum */}
+            <div className="grid grid-cols-2 gap-2">
+
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-500">
+                  Stock Quantity
+                </label>
+
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  required
+                  value={
+                    form.stock
+                  }
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      stock:
+                        e.target.value,
+                    })
+                  }
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 outline-none focus:border-cyan-400"
+                />
+
+                <p className="mt-1 text-[10px] text-slate-400">
+                  For stock movement,
+                  use Inventory
+                  Adjustment.
+                </p>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-500">
+                  Minimum Stock
+                </label>
+
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={
+                    form.minStock
+                  }
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      minStock:
+                        e.target.value,
+                    })
+                  }
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 outline-none focus:border-cyan-400"
+                />
+              </div>
+
+            </div>
+
+            {/* Unit + Tax */}
+            <div className="grid grid-cols-2 gap-2">
+
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-500">
+                  Unit
+                </label>
+
+                <input
+                  value={
+                    form.unit
+                  }
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      unit:
+                        e.target.value,
+                    })
+                  }
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 outline-none focus:border-cyan-400"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-500">
+                  Tax Rate (%)
+                </label>
+
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  value={
+                    form.taxRate
+                  }
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      taxRate:
+                        e.target.value,
+                    })
+                  }
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 outline-none focus:border-cyan-400"
+                />
+              </div>
+
+            </div>
+
+            {/* Buttons */}
+            <div className="flex justify-end gap-2 pt-2">
+
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => {
+                  setIsEditOpen(
+                    false
+                  );
+                  setEditingProduct(
+                    null
+                  );
+                  resetProductForm();
+                }}
+                className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="submit"
+                disabled={saving}
+                className="rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-600 disabled:opacity-50"
+              >
+                {saving
+                  ? "Updating..."
+                  : "Update Product"}
+              </button>
+
+            </div>
+
+          </form>
+
+        </Modal>
+      )}
+
+      {/* =========================================================
+          DELETE PRODUCT CONFIRMATION
+          ========================================================= */}
+      {deleteProductTarget && (
+        <Modal
+          title="Delete Product"
+          onClose={() => {
+            if (!saving) {
+              setDeleteProductTarget(
+                null
+              );
+            }
+          }}
+        >
+
+          <div className="space-y-4">
+
+            <p className="text-sm text-slate-600">
+              Are you sure you want to
+              delete{" "}
+              <strong>
+                {
+                  deleteProductTarget.name
+                }
+              </strong>
+              ?
+            </p>
+
+            <p className="text-xs text-slate-400">
+              If this product has already
+              been used in sales, Laravel
+              will prevent the deletion.
+            </p>
+
+            <div className="flex justify-end gap-2">
+
+              <button
+                disabled={saving}
+                onClick={() =>
+                  setDeleteProductTarget(
+                    null
+                  )
+                }
+                className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+
+              <button
+                disabled={saving}
+                onClick={
+                  handleDeleteProduct
+                }
+                className="rounded-lg bg-rose-500 px-4 py-2 text-sm font-medium text-white hover:bg-rose-600 disabled:opacity-50"
+              >
+                {saving
+                  ? "Deleting..."
+                  : "Delete"}
+              </button>
+
+            </div>
+
+          </div>
+
+        </Modal>
+      )}
+
+      {/* =========================================================
+          INVENTORY ADJUSTMENT MODAL
+          ========================================================= */}
+      {isInventoryOpen &&
+        inventoryProduct && (
+          <Modal
+            title={
+              inventoryForm.type ===
+              "add"
+                ? "Add Stock"
+                : "Remove Stock"
+            }
+            onClose={() => {
+              if (!saving) {
+                setIsInventoryOpen(
+                  false
+                );
+              }
+            }}
+          >
+
+            <form
+              onSubmit={
+                handleInventoryAdjustment
+              }
+              className="space-y-4"
+            >
+
+              {/* Product Information */}
+              <div className="rounded-lg bg-slate-50 p-3">
+
+                <div className="text-sm font-medium text-slate-700">
+                  {
+                    inventoryProduct.name
+                  }
+                </div>
+
+                <div className="mt-1 text-xs text-slate-400">
+                  Current Stock:{" "}
+                  <span className="font-semibold text-slate-700">
+                    {
+                      inventoryProduct.stock
+                    }
+                  </span>{" "}
+                  {
+                    inventoryProduct.unit
+                  }
+                </div>
+
+              </div>
+
+              {/* Add / Remove */}
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-500">
+                  Inventory Action
+                </label>
+
+                <select
+                  value={
+                    inventoryForm.type
+                  }
+                  onChange={(e) =>
+                    setInventoryForm({
+                      ...inventoryForm,
+                      type:
+                        e.target.value,
+                    })
+                  }
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-cyan-400"
+                >
+                  <option value="add">
+                    Add Stock
+                  </option>
+
+                  <option value="remove">
+                    Remove Stock
+                  </option>
+                </select>
+              </div>
+
+              {/* Quantity */}
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-500">
+                  Quantity
+                </label>
+
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  required
+                  value={
+                    inventoryForm.quantity
+                  }
+                  onChange={(e) =>
+                    setInventoryForm({
+                      ...inventoryForm,
+                      quantity:
+                        e.target.value,
+                    })
+                  }
+                  placeholder="10"
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-cyan-400"
+                />
+              </div>
+
+              {/* Reason */}
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-500">
+                  Reason
+                </label>
+
+                <select
+                  value={inventoryForm.reason}
+                  onChange={(e) =>
+                    setInventoryForm({
+                      ...inventoryForm,
+                      reason: e.target.value,
+                    })
+                  }
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-400"
+                >
+                  <option value="purchase">
+                    Purchase / Restock
+                  </option>
+
+                  <option value="sale">
+                    Sale
+                  </option>
+
+                  <option value="return">
+                    Product Return
+                  </option>
+
+                  <option value="adjustment">
+                    Stock Adjustment
+                  </option>
+
+                  <option value="damage">
+                    Damaged Product
+                  </option>
+                </select>
+              </div>
+
+              {/* Buttons */}
+              <div className="flex justify-end gap-2 pt-1">
+
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() =>
+                    setIsInventoryOpen(
+                      false
+                    )
+                  }
+                  className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-600 disabled:opacity-50"
+                >
+                  {saving
+                    ? "Saving..."
+                    : "Save Adjustment"}
+                </button>
+
+              </div>
+
+            </form>
+
+          </Modal>
+        )}
+
+      {/* =========================================================
+          INVENTORY LOGS MODAL
+          ========================================================= */}
+      {isLogsOpen &&
+        inventoryProduct && (
+          <Modal
+            title="Inventory History"
+            onClose={() => {
+              if (!logsLoading) {
+                setIsLogsOpen(false);
+              }
+            }}
+          >
+
+            {/* Product Information */}
+            <div className="mb-4 rounded-lg bg-slate-50 p-3">
+
+              <div className="text-sm font-medium text-slate-700">
+                {
+                  inventoryProduct.name
+                }
+              </div>
+
+              <div className="mt-1 text-xs text-slate-400">
+                Current Stock:{" "}
+                <span className="font-semibold text-slate-700">
+                  {
+                    inventoryProduct.stock
+                  }
+                </span>{" "}
+                {
+                  inventoryProduct.unit
+                }
+              </div>
+
+            </div>
+
+            {logsLoading ? (
+              <div className="py-8 text-center text-xs text-slate-400">
+                Loading inventory
+                history...
+              </div>
+            ) : inventoryLogs.length ===
+              0 ? (
+              <div className="py-8 text-center text-xs text-slate-400">
+                No inventory history
+                found.
+              </div>
+            ) : (
+              <div className="max-h-80 space-y-2 overflow-y-auto">
+
+                {inventoryLogs.map(
+                  (log) => (
+                    <div
+                      key={log.id}
+                      className="rounded-lg border border-slate-100 p-3"
+                    >
+
+                      <div className="flex items-center justify-between">
+
+                        <span
+                          className={`font-semibold ${
+                            log.quantityChange >=
+                            0
+                              ? "text-emerald-600"
+                              : "text-rose-500"
+                          }`}
+                        >
+                          {log.quantityChange >=
+                          0
+                            ? "+"
+                            : ""}
+                          {
+                            log.quantityChange
+                          }
+                        </span>
+
+                        <span className="text-[10px] text-slate-400">
+                          {
+                            formatDateTime(
+                              log.createdAt
+                            )
+                          }
+                        </span>
+
+                      </div>
+
+                      <div className="mt-1 text-xs text-slate-600">
+                        {
+                          log.reason
+                        }
+                      </div>
+
+                      <div className="mt-2 grid grid-cols-2 gap-2 text-[10px] text-slate-400">
+
+                        <div>
+                          Before:{" "}
+                          <span className="font-medium text-slate-600">
+                            {
+                              log.quantityBefore
+                            }
+                          </span>
+                        </div>
+
+                        <div>
+                          After:{" "}
+                          <span className="font-medium text-slate-600">
+                            {
+                              log.quantityAfter
+                            }
+                          </span>
+                        </div>
+
+                        <div className="col-span-2">
+                          Created By:{" "}
+                          <span className="font-medium text-slate-600">
+                            {
+                              log.createdBy
+                            }
+                          </span>
+                        </div>
+
+                      </div>
+
+                    </div>
+                  )
+                )}
+
+              </div>
+            )}
+
+            <div className="mt-4 flex justify-end">
+
+              <button
+                onClick={() =>
+                  setIsLogsOpen(false)
+                }
+                className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+              >
+                Close
+              </button>
+
+            </div>
+
+          </Modal>
+        )}
+
+      {/* =========================================================
           MANAGE CATEGORIES MODAL
           ========================================================= */}
       {isManageCategoriesOpen && (
@@ -1510,7 +3147,9 @@ export default function ConvenienceStore() {
 
                 return (
                   <li
-                    key={category.id}
+                    key={
+                      category.id
+                    }
                     className="flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2 text-sm"
                   >
 
@@ -1521,7 +3160,9 @@ export default function ConvenienceStore() {
                         className="text-slate-400"
                       />
 
-                      {category.name}
+                      {
+                        category.name
+                      }
 
                     </span>
 
@@ -1545,7 +3186,8 @@ export default function ConvenienceStore() {
               }
             )}
 
-            {categories.length === 0 && (
+            {categories.length ===
+              0 && (
               <li className="py-4 text-center text-xs text-slate-400">
                 No categories yet.
               </li>
@@ -1555,7 +3197,9 @@ export default function ConvenienceStore() {
 
           {/* Add Category */}
           <form
-            onSubmit={handleAddCategory}
+            onSubmit={
+              handleAddCategory
+            }
             className="flex gap-2"
           >
 

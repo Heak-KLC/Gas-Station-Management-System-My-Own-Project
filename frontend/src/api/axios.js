@@ -7,8 +7,18 @@ import axios from "axios";
 // Laravel backend is currently running on port 8000.
 const api = axios.create({
   baseURL: "http://127.0.0.1:8000/api",
+
+  // ------------------------------------------------
+  // IMPORTANT:
+  // Do NOT set Content-Type to application/json here.
+  //
+  // Some requests use normal JSON.
+  // Other requests use FormData for file uploads.
+  //
+  // Axios will automatically choose the correct
+  // Content-Type when FormData is used.
+  // ------------------------------------------------
   headers: {
-    "Content-Type": "application/json",
     Accept: "application/json",
   },
 });
@@ -29,17 +39,22 @@ const api = axios.create({
 // --------------------------------------------------
 api.interceptors.request.use(
   (config) => {
+
     // Get the authentication token from the
     // current browser session.
-    const token = sessionStorage.getItem("gas_station_token");
+    const token = sessionStorage.getItem(
+      "gas_station_token"
+    );
 
     // If a token exists, attach it to the request.
     if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
+      config.headers.Authorization =
+        `Bearer ${token}`;
     }
 
     return config;
   },
+
   (error) => Promise.reject(error)
 );
 
@@ -58,12 +73,15 @@ api.interceptors.response.use(
   (response) => response,
 
   (error) => {
+
     // Check whether Laravel rejected the token.
     if (error.response?.status === 401) {
 
       // Remove the invalid token from the
       // current browser session.
-      sessionStorage.removeItem("gas_station_token");
+      sessionStorage.removeItem(
+        "gas_station_token"
+      );
 
       // Return the user to the Login page.
       //

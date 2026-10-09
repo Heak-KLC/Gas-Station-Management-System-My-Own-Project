@@ -13,6 +13,9 @@ class StoreSale extends Model
 
     protected $primaryKey = 'store_sale_id';
 
+    // The store_sales table does not have created_at and updated_at.
+    public $timestamps = false;
+
     protected $fillable = [
         'sale_number',
         'customer_id',

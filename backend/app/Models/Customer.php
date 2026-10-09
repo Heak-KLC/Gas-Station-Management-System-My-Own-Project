@@ -9,10 +9,19 @@ class Customer extends Model
 {
     use HasFactory;
 
+    // Use the existing MySQL table.
     protected $table = 'customers';
 
+    // Set the primary key.
     protected $primaryKey = 'customer_id';
 
+    // Tell Laravel to use registered_at instead of created_at.
+    const CREATED_AT = 'registered_at';
+
+    // The database already has an updated_at column.
+    const UPDATED_AT = 'updated_at';
+
+    // Columns allowed for mass assignment.
     protected $fillable = [
         'customer_code',
         'full_name',
@@ -23,10 +32,9 @@ class Customer extends Model
         'loyalty_points',
         'total_purchases',
         'is_active',
-        'registered_at',
-        'updated_at',
     ];
 
+    // Convert database values to the correct PHP types.
     protected $casts = [
         'loyalty_points' => 'integer',
         'total_purchases' => 'decimal:2',

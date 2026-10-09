@@ -22,8 +22,9 @@ class WorkSchedule extends Model
     ];
 
     protected $casts = [
-        'is_active' => 'boolean',
-        'created_at' => 'datetime',
+    'day_of_week' => 'integer',
+    'is_active' => 'boolean',
+    'created_at' => 'datetime',
     ];
 
     public function employee()

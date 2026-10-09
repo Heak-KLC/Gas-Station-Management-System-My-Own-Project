@@ -117,195 +117,258 @@ export default function MasterReports() {
   };
 
   return (
-    <div className="space-y-5 p-6 bg-slate-50/60 min-h-screen">
-      {/* Header Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-bold text-slate-800 tracking-tight">Master Report</h2>
-          <p className="text-xs text-slate-400">Integrated financial analytics, inventory, and station performance overview</p>
-        </div>
-        <div className="flex items-center gap-2 print:hidden">
-          <button
-            onClick={() => setIsAddModalOpen(true)}
-            className="flex items-center gap-1.5 rounded-xl bg-cyan-500 px-3.5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-cyan-600 transition"
-          >
-            <FilePlus size={15} /> Add New Report
-          </button>
+    <div className="space-y-5 p-6 bg-slate-50/60 min-h-screen print:bg-white print:p-0 print:m-0 print:min-h-0 print:w-full print:overflow-visible">
+      
+      {/* CSS ពិសេសសម្រាប់ Print ឱ្យចេញ Chart គ្រប់ ១០០% */}
+      <style>{`
+        @media print {
+          /* 1. លាក់ Sidebar, Topbar, និងប៊ូតុងទាំងអស់ */
+          aside, nav, header, .sidebar, .topbar, .navbar, .print\\:hidden {
+            display: none !important;
+          }
 
-          {/* Export Dropdown */}
-          <div className="relative">
+          /* 2. Reset Layout Containers */
+          html, body, #root, main {
+            background: #ffffff !important;
+            color: #000000 !important;
+            width: 100% !important;
+            height: auto !important;
+            min-height: 0 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            overflow: visible !important;
+          }
+
+          /* 3. Scale Layout ឱ្យទំហំល្មមស្អាតលើ A4 ដោយមិនបាត់ Chart ពណ៌ */
+          .print-area {
+            zoom: 82% !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+
+          /* 4. ការពារកុំឱ្យបាក់ដាច់ប្រអប់កណ្តាលទំព័រ */
+          .print-break-avoid {
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+          }
+
+          /* 5. កំណត់ ResponsiveContainer ឱ្យ render Normal Dimensions */
+          .recharts-responsive-container {
+            display: block !important;
+            position: relative !important;
+            visibility: visible !important;
+          }
+
+          .overflow-x-auto {
+            overflow: visible !important;
+            display: block !important;
+            width: 100% !important;
+          }
+
+          table {
+            width: 100% !important;
+            border-collapse: collapse !important;
+          }
+
+          @page {
+            size: A4 portrait;
+            margin: 8mm;
+          }
+        }
+      `}</style>
+
+      <div className="print-area space-y-5">
+        {/* Header Bar */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 print-break-avoid">
+          <div>
+            <h2 className="text-lg font-bold text-slate-800 tracking-tight">Master Report</h2>
+            <p className="text-xs text-slate-400">Integrated financial analytics, inventory, and station performance overview</p>
+          </div>
+          <div className="flex items-center gap-2 print:hidden">
             <button
-              onClick={() => setShowExportMenu(!showExportMenu)}
+              onClick={() => setIsAddModalOpen(true)}
+              className="flex items-center gap-1.5 rounded-xl bg-cyan-500 px-3.5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-cyan-600 transition"
+            >
+              <FilePlus size={15} /> Add New Report
+            </button>
+
+            {/* Export Dropdown */}
+            <div className="relative">
+              <button
+                onClick={() => setShowExportMenu(!showExportMenu)}
+                className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-600 shadow-sm hover:bg-slate-50 transition"
+              >
+                <Download size={15} /> Export (PDF/Excel) <ChevronDown size={13} />
+              </button>
+              {showExportMenu && (
+                <div className="absolute right-0 mt-1.5 w-44 bg-white rounded-xl shadow-lg border border-slate-100 py-1 z-30 text-xs">
+                  <button
+                    onClick={handleExportCSV}
+                    className="w-full text-left px-3 py-2 text-slate-700 hover:bg-slate-50 flex items-center gap-2"
+                  >
+                    <FileText size={14} className="text-emerald-500" /> Export Excel (.CSV)
+                  </button>
+                  <button
+                    onClick={handlePrint}
+                    className="w-full text-left px-3 py-2 text-slate-700 hover:bg-slate-50 flex items-center gap-2"
+                  >
+                    <Printer size={14} className="text-cyan-500" /> Save as PDF (Print)
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <button
+              onClick={handlePrint}
               className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-600 shadow-sm hover:bg-slate-50 transition"
             >
-              <Download size={15} /> Export (PDF/Excel) <ChevronDown size={13} />
+              <Printer size={15} /> Print
             </button>
-            {showExportMenu && (
-              <div className="absolute right-0 mt-1.5 w-44 bg-white rounded-xl shadow-lg border border-slate-100 py-1 z-30 text-xs">
-                <button
-                  onClick={handleExportCSV}
-                  className="w-full text-left px-3 py-2 text-slate-700 hover:bg-slate-50 flex items-center gap-2"
-                >
-                  <FileText size={14} className="text-emerald-500" /> Export Excel (.CSV)
-                </button>
-                <button
-                  onClick={handlePrint}
-                  className="w-full text-left px-3 py-2 text-slate-700 hover:bg-slate-50 flex items-center gap-2"
-                >
-                  <Printer size={14} className="text-cyan-500" /> Save as PDF (Print)
-                </button>
+          </div>
+        </div>
+
+        {/* Metric Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 print-break-avoid">
+          <StatCard label="Total Fuel Sales ($)" value="$150,250.00" delta="+12% vs Q3" deltaTone="up" />
+          <StatCard label="Store Sale ($)" value="$45,780.50" delta="+5% vs Q3" deltaTone="up" />
+          <StatCard label="Total Expenses ($)" value="$98,120.00" delta="-2% lower" deltaTone="neutral" />
+          <StatCard label="Net Profit ($)" value="$97,910.50" delta="+18% profit margin" deltaTone="up" />
+        </div>
+
+        {/* Row 1 Charts */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 print-break-avoid">
+          <Panel title="Station Integrated Overview (Q4 2026) — Integrated Revenue vs Multi-layered Expenses">
+            <ResponsiveContainer width="100%" height={210}>
+              <LineChart data={revenueExpense}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                <XAxis dataKey="week" tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
+                <Tooltip />
+                <Legend wrapperStyle={{ fontSize: 11 }} />
+                <Line type="monotone" dataKey="revenue" name="Revenue" stroke="#0ea5e9" strokeWidth={3} dot={{ r: 3 }} />
+                <Line type="monotone" dataKey="expense" name="Expenses" stroke="#f43f5e" strokeWidth={2.5} dot={{ r: 3 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </Panel>
+
+          <Panel title="Overall Performance — Financial Breakdown & Operations Details">
+            <div className="grid grid-cols-3 gap-2 text-center text-xs mb-3 bg-slate-50/80 p-2.5 rounded-xl border border-slate-100">
+              <div>
+                <div className="text-slate-400">Avg. Wait Time</div>
+                <div className="font-bold text-slate-700 text-sm">12 min</div>
               </div>
-            )}
-          </div>
+              <div>
+                <div className="text-slate-400">Gallons per Hour</div>
+                <div className="font-bold text-slate-700 text-sm">36 Gal</div>
+              </div>
+              <div>
+                <div className="text-slate-400">Tank Levels %</div>
+                <div className="font-bold text-emerald-600 text-sm">85%</div>
+              </div>
+            </div>
+            <ResponsiveContainer width="100%" height={145}>
+              <PieChart>
+                <Pie data={financialBreakdown} dataKey="value" nameKey="name" innerRadius={38} outerRadius={58} paddingAngle={3}>
+                  {financialBreakdown.map((f) => (
+                    <Cell key={f.name} fill={f.color} />
+                  ))}
+                </Pie>
+                <Tooltip />
+                <Legend wrapperStyle={{ fontSize: 10 }} />
+              </PieChart>
+            </ResponsiveContainer>
+          </Panel>
+        </div>
 
-          <button
-            onClick={handlePrint}
-            className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-600 shadow-sm hover:bg-slate-50 transition"
-          >
-            <Printer size={15} /> Print
-          </button>
+        {/* Row 2 Charts */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 print-break-avoid">
+          <Panel title="Sales Breakdown by Payment Method">
+            <ResponsiveContainer width="100%" height={190}>
+              <BarChart data={paymentMethod}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                <XAxis dataKey="week" tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
+                <Tooltip />
+                <Legend wrapperStyle={{ fontSize: 11 }} />
+                <Bar dataKey="card" name="Card" stackId="a" fill="#0ea5e9" radius={[0, 0, 0, 0]} />
+                <Bar dataKey="cash" name="Cash" stackId="a" fill="#f59e0b" radius={[0, 0, 0, 0]} />
+                <Bar dataKey="qr" name="QR Code" stackId="a" fill="#10b981" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </Panel>
+
+          <Panel title="Convenience Store Top Categories by Region">
+            <ResponsiveContainer width="100%" height={190}>
+              <PieChart>
+                <Pie data={storeCategory} dataKey="value" nameKey="name" innerRadius={42} outerRadius={68} paddingAngle={3}>
+                  {storeCategory.map((s) => (
+                    <Cell key={s.name} fill={s.color} />
+                  ))}
+                </Pie>
+                <Tooltip />
+                <Legend wrapperStyle={{ fontSize: 11 }} />
+              </PieChart>
+            </ResponsiveContainer>
+          </Panel>
+        </div>
+
+        {/* Master Audit Log Table */}
+        <div className="print-break-avoid">
+          <Panel title="Audit-Level Master Report Log Table">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-slate-100 bg-slate-50/80 text-slate-400">
+                    <th className="px-3.5 py-2.5 font-semibold">Report ID</th>
+                    <th className="px-3.5 py-2.5 font-semibold">Report Type & Period</th>
+                    <th className="px-3.5 py-2.5 font-semibold">Location Context</th>
+                    <th className="px-3.5 py-2.5 font-semibold">Generated By</th>
+                    <th className="px-3.5 py-2.5 font-semibold">Date</th>
+                    <th className="px-3.5 py-2.5 font-semibold">Status</th>
+                    <th className="px-3.5 py-2.5 font-semibold text-right print:hidden">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {reports.map((r) => (
+                    <tr key={r.id} className="hover:bg-slate-50/70 transition">
+                      <td className="px-3.5 py-2.5 font-semibold text-slate-800 font-mono">{r.id}</td>
+                      <td className="px-3.5 py-2.5">
+                        <div className="font-semibold text-slate-700">{r.title}</div>
+                        <div className="text-[10px] text-slate-400">{r.period}</div>
+                      </td>
+                      <td className="px-3.5 py-2.5 text-slate-500">{r.location}</td>
+                      <td className="px-3.5 py-2.5 font-medium text-slate-600">{r.by}</td>
+                      <td className="px-3.5 py-2.5 text-slate-500">{r.date}</td>
+                      <td className="px-3.5 py-2.5">
+                        <StatusBadge status={r.status === "Completed" ? "Active" : "Check Status"} />
+                      </td>
+                      <td className="px-3.5 py-2.5 text-right font-medium space-x-2 print:hidden">
+                        <button
+                          onClick={() => setSelectedReport(r)}
+                          className="text-cyan-600 hover:text-cyan-700 hover:underline"
+                        >
+                          View
+                        </button>
+                        <span className="text-slate-300">·</span>
+                        <button
+                          onClick={() => handleDownloadReport(r)}
+                          className="text-cyan-600 hover:text-cyan-700 hover:underline"
+                        >
+                          Download
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Panel>
         </div>
       </div>
 
-      {/* Metric Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard label="Total Fuel Sales ($)" value="$150,250.00" delta="+12% vs Q3" deltaTone="up" />
-        <StatCard label="Store Sale ($)" value="$45,780.50" delta="+5% vs Q3" deltaTone="up" />
-        <StatCard label="Total Expenses ($)" value="$98,120.00" delta="-2% lower" deltaTone="neutral" />
-        <StatCard label="Net Profit ($)" value="$97,910.50" delta="+18% profit margin" deltaTone="up" />
-      </div>
-
-      {/* Row 1 Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <Panel title="Station Integrated Overview (Q4 2026) — Integrated Revenue vs Multi-layered Expenses">
-          <ResponsiveContainer width="100%" height={210}>
-            <LineChart data={revenueExpense}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-              <XAxis dataKey="week" tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
-              <Tooltip />
-              <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Line type="monotone" dataKey="revenue" name="Revenue" stroke="#0ea5e9" strokeWidth={3} dot={{ r: 3 }} />
-              <Line type="monotone" dataKey="expense" name="Expenses" stroke="#f43f5e" strokeWidth={2.5} dot={{ r: 3 }} />
-            </LineChart>
-          </ResponsiveContainer>
-        </Panel>
-
-        <Panel title="Overall Performance — Financial Breakdown & Operations Details">
-          <div className="grid grid-cols-3 gap-2 text-center text-xs mb-3 bg-slate-50/80 p-2.5 rounded-xl border border-slate-100">
-            <div>
-              <div className="text-slate-400">Avg. Wait Time</div>
-              <div className="font-bold text-slate-700 text-sm">12 min</div>
-            </div>
-            <div>
-              <div className="text-slate-400">Gallons per Hour</div>
-              <div className="font-bold text-slate-700 text-sm">36 Gal</div>
-            </div>
-            <div>
-              <div className="text-slate-400">Tank Levels %</div>
-              <div className="font-bold text-emerald-600 text-sm">85%</div>
-            </div>
-          </div>
-          <ResponsiveContainer width="100%" height={145}>
-            <PieChart>
-              <Pie data={financialBreakdown} dataKey="value" nameKey="name" innerRadius={38} outerRadius={58} paddingAngle={3}>
-                {financialBreakdown.map((f) => (
-                  <Cell key={f.name} fill={f.color} />
-                ))}
-              </Pie>
-              <Tooltip />
-              <Legend wrapperStyle={{ fontSize: 10 }} />
-            </PieChart>
-          </ResponsiveContainer>
-        </Panel>
-      </div>
-
-      {/* Row 2 Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <Panel title="Sales Breakdown by Payment Method">
-          <ResponsiveContainer width="100%" height={190}>
-            <BarChart data={paymentMethod}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-              <XAxis dataKey="week" tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
-              <Tooltip />
-              <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Bar dataKey="card" name="Card" stackId="a" fill="#0ea5e9" radius={[0, 0, 0, 0]} />
-              <Bar dataKey="cash" name="Cash" stackId="a" fill="#f59e0b" radius={[0, 0, 0, 0]} />
-              <Bar dataKey="qr" name="QR Code" stackId="a" fill="#10b981" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </Panel>
-
-        <Panel title="Convenience Store Top Categories by Region">
-          <ResponsiveContainer width="100%" height={190}>
-            <PieChart>
-              <Pie data={storeCategory} dataKey="value" nameKey="name" innerRadius={42} outerRadius={68} paddingAngle={3}>
-                {storeCategory.map((s) => (
-                  <Cell key={s.name} fill={s.color} />
-                ))}
-              </Pie>
-              <Tooltip />
-              <Legend wrapperStyle={{ fontSize: 11 }} />
-            </PieChart>
-          </ResponsiveContainer>
-        </Panel>
-      </div>
-
-      {/* Master Audit Log Table */}
-      <Panel title="Audit-Level Master Report Log Table">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead>
-              <tr className="border-b border-slate-100 bg-slate-50/80 text-slate-400">
-                <th className="px-3.5 py-2.5 font-semibold">Report ID</th>
-                <th className="px-3.5 py-2.5 font-semibold">Report Type & Period</th>
-                <th className="px-3.5 py-2.5 font-semibold">Location Context</th>
-                <th className="px-3.5 py-2.5 font-semibold">Generated By</th>
-                <th className="px-3.5 py-2.5 font-semibold">Date</th>
-                <th className="px-3.5 py-2.5 font-semibold">Status</th>
-                <th className="px-3.5 py-2.5 font-semibold text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {reports.map((r) => (
-                <tr key={r.id} className="hover:bg-slate-50/70 transition">
-                  <td className="px-3.5 py-2.5 font-semibold text-slate-800 font-mono">{r.id}</td>
-                  <td className="px-3.5 py-2.5">
-                    <div className="font-semibold text-slate-700">{r.title}</div>
-                    <div className="text-[10px] text-slate-400">{r.period}</div>
-                  </td>
-                  <td className="px-3.5 py-2.5 text-slate-500">{r.location}</td>
-                  <td className="px-3.5 py-2.5 font-medium text-slate-600">{r.by}</td>
-                  <td className="px-3.5 py-2.5 text-slate-500">{r.date}</td>
-                  <td className="px-3.5 py-2.5">
-                    <StatusBadge status={r.status === "Completed" ? "Active" : "Check Status"} />
-                  </td>
-                  <td className="px-3.5 py-2.5 text-right font-medium space-x-2">
-                    <button
-                      onClick={() => setSelectedReport(r)}
-                      className="text-cyan-600 hover:text-cyan-700 hover:underline"
-                    >
-                      View
-                    </button>
-                    <span className="text-slate-300">·</span>
-                    <button
-                      onClick={() => handleDownloadReport(r)}
-                      className="text-cyan-600 hover:text-cyan-700 hover:underline"
-                    >
-                      Download
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Panel>
-
-      {/* Modal 1: Add New Report Modal */}
+      {/* Modals ត្រូវលាក់ពេល Print */}
       {isAddModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:hidden">
           <div className="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl border border-slate-100 space-y-4">
             <div className="flex justify-between items-center border-b pb-3">
               <h3 className="font-bold text-slate-800 text-sm">Generate New Master Report</h3>
@@ -384,9 +447,8 @@ export default function MasterReports() {
         </div>
       )}
 
-      {/* Modal 2: View Report Detail Modal */}
       {selectedReport && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:hidden">
           <div className="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl border border-slate-100 space-y-4">
             <div className="flex justify-between items-center border-b pb-3">
               <div className="flex items-center gap-2">

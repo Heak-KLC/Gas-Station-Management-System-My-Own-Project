@@ -9,10 +9,16 @@ class FuelSale extends Model
 {
     use HasFactory;
 
+    // Specify the database table.
     protected $table = 'fuel_sales';
 
+    // The primary key is sale_id, not the default id.
     protected $primaryKey = 'sale_id';
 
+    // The fuel_sales table does not contain created_at and updated_at.
+    public $timestamps = false;
+
+    // Columns that can be mass-assigned.
     protected $fillable = [
         'sale_number',
         'customer_id',
@@ -31,16 +37,15 @@ class FuelSale extends Model
         'receipt_number',
     ];
 
+    // Convert database values to appropriate PHP data types.
     protected $casts = [
         'quantity' => 'decimal:3',
-        'unit_price' => 'decimal:3',
+        'unit_price' => 'decimal:2',
         'subtotal' => 'decimal:2',
         'tax' => 'decimal:2',
         'discount' => 'decimal:2',
         'total_amount' => 'decimal:2',
         'sale_date' => 'datetime',
-        'created_at' => 'datetime',
-        'updated_at' => 'datetime',
     ];
 
     // Sale → Customer
@@ -53,7 +58,7 @@ class FuelSale extends Model
         );
     }
 
-    // Sale → Pump
+    // Sale → Fuel Pump
     public function pump()
     {
         return $this->belongsTo(
