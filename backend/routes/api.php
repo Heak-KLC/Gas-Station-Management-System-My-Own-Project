@@ -21,7 +21,8 @@ use App\Http\Controllers\EmployeeAttendanceController;
 use App\Http\Controllers\WorkScheduleController;
 use App\Http\Controllers\SystemSettingController;
 use App\Http\Controllers\EquipmentMaintenanceController;
-// use App\Http\Controllers\EquipmentMaintenance;
+use App\Http\Controllers\ReportCacheController;
+use App\Http\Controllers\NotificationController;
 
 
 // =====================================================
@@ -438,4 +439,87 @@ Route::middleware('auth:sanctum')->group(function () {
     );
 
 });
+
+    
+    // =====================================================
+    // MASTER REPORTS API
+    // All routes require a valid Sanctum token.
+    // =====================================================
+
+    // Get all saved reports
+    Route::get(
+        '/reports',
+        [ReportCacheController::class, 'index']
+    );
+
+    // Save a generated report
+    Route::post(
+        '/reports',
+        [ReportCacheController::class, 'store']
+    );
+
+    // Get report summary statistics
+    Route::get(
+        '/reports/summary',
+        [ReportCacheController::class, 'summary']
+    );
+
+    // Get integrated overview data for charts
+    Route::get(
+        '/reports/integrated-overview',
+        [ReportCacheController::class, 'integratedOverview']
+    );
+
+    // Get sales grouped by payment method
+    Route::get(
+        '/reports/sales-by-payment-method',
+        [ReportCacheController::class, 'salesByPaymentMethod']
+    );
+
+    // Get store sales grouped by product category
+    Route::get(
+        '/reports/store-categories',
+        [ReportCacheController::class, 'storeCategories']
+    );
+
+    // Get details of one saved report
+    Route::get(
+        '/reports/{id}',
+        [ReportCacheController::class, 'show']
+    );
+});
+// =====================================================
+// NOTIFICATIONS API
+// All routes require a valid Sanctum token.
+// =====================================================
+
+Route::middleware('auth:sanctum')->group(function () {
+
+    // Get notifications and optionally filter by type.
+    // GET /api/notifications
+    Route::get(
+        '/notifications',
+        [NotificationController::class, 'index']
+    );
+
+    // Mark one notification as read.
+    // PATCH /api/notifications/{id}/read
+    Route::patch(
+        '/notifications/{id}/read',
+        [NotificationController::class, 'markAsRead']
+    );
+
+    // Mark the current user's notifications as read.
+    // PATCH /api/notifications/read-all
+    Route::patch(
+        '/notifications/read-all',
+        [NotificationController::class, 'markAllAsRead']
+    );
+
+
+    Route::patch(
+        '/notifications/archive-all',
+        [NotificationController::class, 'archiveAll']
+    );
+
 });
