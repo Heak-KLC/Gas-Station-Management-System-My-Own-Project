@@ -4,21 +4,23 @@ namespace App\Http\Controllers;
 
 use App\Models\Employee;
 use App\Models\EmployeeAttendance;
+use App\Models\AuditLog;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 
 class EmployeeAttendanceController extends Controller
 {
     /**
      * GET /api/employee-attendances
-     * ទាញយកបញ្ជីវត្តមាន រួមជាមួយព័ត៌មានបុគ្គលិក។
+     * Retrieve attendance records with employee information.
      */
     public function index(Request $request)
     {
         $query = EmployeeAttendance::with('employee');
 
-        // ត្រងតាមថ្ងៃ ឧទាហរណ៍ ?date=2026-10-09
+        // Filter attendance by date.
         if ($request->filled('date')) {
             $request->validate([
                 'date' => ['date'],
@@ -27,12 +29,12 @@ class EmployeeAttendanceController extends Controller
             $query->whereDate('date', $request->date);
         }
 
-        // ត្រងតាមបុគ្គលិក
+        // Filter attendance by employee.
         if ($request->filled('employee_id')) {
             $query->where('employee_id', $request->employee_id);
         }
 
-        // ត្រងតាមស្ថានភាពវត្តមាន
+        // Filter attendance by status.
         if ($request->filled('status')) {
             $request->validate([
                 'status' => [
@@ -60,7 +62,7 @@ class EmployeeAttendanceController extends Controller
 
     /**
      * POST /api/employee-attendances
-     * បង្កើតកំណត់ត្រាវត្តមានថ្មី (Check-in)។
+     * Create an attendance record and record the audit log.
      */
     public function store(Request $request)
     {
@@ -86,12 +88,13 @@ class EmployeeAttendanceController extends Controller
             'notes' => ['nullable', 'string'],
         ]);
 
-        // តារាងមាន Unique Key លើ employee_id + date។
-        // បុគ្គលិកម្នាក់មិនអាចមាន Attendance ពីរជួរនៅថ្ងៃតែមួយបានទេ។
+        // Prevent duplicate attendance for the same employee and date.
         $alreadyExists = EmployeeAttendance::where(
             'employee_id',
             $validated['employee_id']
-        )->whereDate('date', $validated['date'])->exists();
+        )
+            ->whereDate('date', $validated['date'])
+            ->exists();
 
         if ($alreadyExists) {
             return response()->json([
@@ -100,7 +103,7 @@ class EmployeeAttendanceController extends Controller
             ], 422);
         }
 
-        // បើមាន Check-out ត្រូវប្រាកដថាវាមិនមុន Check-in។
+        // Check-out must not be earlier than check-in.
         if (
             !empty($validated['check_out']) &&
             Carbon::parse($validated['check_out'])
@@ -112,10 +115,27 @@ class EmployeeAttendanceController extends Controller
             ], 422);
         }
 
-        // កំណត់ស្ថានភាពលំនាំដើម ប្រសិនបើ Frontend មិនផ្ញើមក។
+        // Set the default attendance status.
         $validated['status'] = $validated['status'] ?? 'present';
 
-        $attendance = EmployeeAttendance::create($validated);
+        // Create attendance and its audit log in one transaction.
+        $attendance = DB::transaction(function () use (
+            $request,
+            $validated
+        ) {
+            $attendance = EmployeeAttendance::create($validated);
+
+            // Record the newly created attendance.
+            $this->recordAuditLog(
+                $request,
+                'CREATE',
+                $attendance->attendance_id,
+                null,
+                $this->getAttendanceAuditValues($attendance)
+            );
+
+            return $attendance;
+        });
 
         return response()->json([
             'success' => true,
@@ -126,7 +146,7 @@ class EmployeeAttendanceController extends Controller
 
     /**
      * GET /api/employee-attendances/{employee_attendance}
-     * បង្ហាញកំណត់ត្រាវត្តមានមួយ។
+     * Retrieve one attendance record.
      */
     public function show(string $id)
     {
@@ -141,7 +161,7 @@ class EmployeeAttendanceController extends Controller
 
     /**
      * PUT/PATCH /api/employee-attendances/{employee_attendance}
-     * កែប្រែ Check-in, Check-out, ថ្ងៃ ឬស្ថានភាពវត្តមាន។
+     * Update attendance and record old and new values.
      */
     public function update(Request $request, string $id)
     {
@@ -170,20 +190,24 @@ class EmployeeAttendanceController extends Controller
             'notes' => ['sometimes', 'nullable', 'string'],
         ]);
 
-        // ប្រើតម្លៃថ្មី ប្រសិនបើមាន; បើគ្មាន ប្រើតម្លៃដែលមានស្រាប់។
+        // Determine the employee and date after the requested update.
         $employeeId = $validated['employee_id']
             ?? $attendance->employee_id;
 
         $date = $validated['date']
-            ?? $attendance->date->toDateString();
+            ?? Carbon::parse($attendance->date)->toDateString();
 
-        // ពិនិត្យថាមិនមាន Attendance ផ្សេងប្រើ employee/date ដូចគ្នា។
+        // Prevent duplicate attendance when employee or date changes.
         $duplicate = EmployeeAttendance::where(
             'employee_id',
             $employeeId
         )
             ->whereDate('date', $date)
-            ->where('attendance_id', '!=', $attendance->attendance_id)
+            ->where(
+                'attendance_id',
+                '!=',
+                $attendance->attendance_id
+            )
             ->exists();
 
         if ($duplicate) {
@@ -193,6 +217,7 @@ class EmployeeAttendanceController extends Controller
             ], 422);
         }
 
+        // Use the submitted values or keep the existing values.
         $checkIn = $validated['check_in']
             ?? $attendance->check_in;
 
@@ -200,7 +225,7 @@ class EmployeeAttendanceController extends Controller
             ? $validated['check_out']
             : $attendance->check_out;
 
-        // កុំអនុញ្ញាតឱ្យ Check-out មុន Check-in។
+        // Check-out must not be earlier than check-in.
         if (
             $checkOut !== null &&
             Carbon::parse($checkOut)->lt(Carbon::parse($checkIn))
@@ -211,28 +236,124 @@ class EmployeeAttendanceController extends Controller
             ], 422);
         }
 
-        $attendance->update($validated);
+        // Capture the old values before updating the record.
+        $oldValues = $this->getAttendanceAuditValues($attendance);
+
+        // Update attendance and audit log atomically.
+        $updatedAttendance = DB::transaction(function () use (
+            $request,
+            $attendance,
+            $validated,
+            $oldValues
+        ) {
+            $attendance->update($validated);
+            $attendance->refresh();
+
+            // Record the old values and the updated values.
+            $this->recordAuditLog(
+                $request,
+                'UPDATE',
+                $attendance->attendance_id,
+                $oldValues,
+                $this->getAttendanceAuditValues($attendance)
+            );
+
+            return $attendance;
+        });
 
         return response()->json([
             'success' => true,
             'message' => 'Attendance updated successfully.',
-            'data' => $attendance->fresh()->load('employee'),
+            'data' => $updatedAttendance->load('employee'),
         ]);
     }
 
     /**
      * DELETE /api/employee-attendances/{employee_attendance}
-     * លុបកំណត់ត្រាវត្តមានមួយ។
+     * Delete an attendance record and record the deletion.
      */
-    public function destroy(string $id)
+    public function destroy(Request $request, string $id)
     {
         $attendance = EmployeeAttendance::findOrFail($id);
 
-        $attendance->delete();
+        // Save attendance information before deleting it.
+        $oldValues = $this->getAttendanceAuditValues($attendance);
+
+        // Delete attendance and create its audit log together.
+        DB::transaction(function () use (
+            $request,
+            $attendance,
+            $oldValues
+        ) {
+            $this->recordAuditLog(
+                $request,
+                'DELETE',
+                $attendance->attendance_id,
+                $oldValues,
+                null
+            );
+
+            $attendance->delete();
+        });
 
         return response()->json([
             'success' => true,
             'message' => 'Attendance deleted successfully.',
+        ]);
+    }
+
+    /**
+     * Prepare attendance fields for audit logging.
+     * Store only the fields needed to track attendance changes.
+     */
+    private function getAttendanceAuditValues(
+        EmployeeAttendance $attendance
+    ): array {
+        return [
+            'employee_id' => $attendance->employee_id,
+            'date' => $attendance->date,
+            'check_in' => $attendance->check_in,
+            'check_out' => $attendance->check_out,
+            'status' => $attendance->status,
+            'notes' => $attendance->notes,
+        ];
+    }
+
+    /**
+     * Insert an activity record into the audit_logs table.
+     */
+    private function recordAuditLog(
+        Request $request,
+        string $action,
+        $entityId,
+        ?array $oldValues = null,
+        ?array $newValues = null
+    ): void {
+        AuditLog::create([
+            // Identify the authenticated user performing the action.
+            'user_id' => $request->user()?->user_id,
+
+            'action' => $action,
+            'entity_type' => 'EmployeeAttendance',
+            'entity_id' => $entityId,
+
+            // Store old and new values as JSON strings.
+            'old_value' => $oldValues === null
+                ? null
+                : json_encode(
+                    $oldValues,
+                    JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+                ),
+
+            'new_value' => $newValues === null
+                ? null
+                : json_encode(
+                    $newValues,
+                    JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+                ),
+
+            // Record the IP address of the request.
+            'ip_address' => $request->ip(),
         ]);
     }
 }

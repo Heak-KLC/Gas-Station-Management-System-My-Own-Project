@@ -1,77 +1,87 @@
-import { useState } from "react";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  AreaChart,
-  Area,
-  BarChart,
-  Bar,
-  Cell,
-  LabelList,
-  ResponsiveContainer,
-  XAxis,
-  YAxis,
-  Tooltip,
-  CartesianGrid,
+  AreaChart, Area, BarChart, Bar, LabelList, ResponsiveContainer,
+  XAxis, YAxis, Tooltip, CartesianGrid,
 } from "recharts";
 import { Panel, StatusBadge } from "../components/ui";
-import { X, Save, Eye } from "lucide-react";
-import pumpA from "../image/pump.png";
-import pumpB from "../image/pump.png";
-import pumpC from "../image/pump.png";
-import pumpD from "../image/pump.png";
+import { X, Save, Eye, RefreshCw } from "lucide-react";
+import api from "../api/axios";
+import pumpImage from "../image/pump.png";
 
-const initialPumps = [
-  { id: "A", status: "Ready/Active", vol: "0,000L", image: pumpA },
-  { id: "B", status: "Ready/Active", vol: "5,000L", image: pumpB },
-  { id: "C", status: "Ready/Active", vol: "0,000L", image: pumpC },
-  { id: "D", status: "Ready/Active", vol: "0,000L", image: pumpD },
-];
+// ======================================================
+// Helper functions
+// ======================================================
 
-const stockByTank = [
-  { tank: "Tank A", fuel: "Regular", current: 15000, capacity: 20000, dark: "#2563eb", light: "#93c5fd" },
-  { tank: "Tank B", fuel: "Premium", current: 8000, capacity: 12000, dark: "#f59e0b", light: "#fcd34d" },
-  { tank: "Tank C", fuel: "Diesel", current: 12000, capacity: 12000, dark: "#475569", light: "#94a3b8" },
-];
+function toNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : 0;
+}
 
-const priceHistory = [
-  { month: "Jan", cost: 1.15, sell: 1.3, profit: 0.6 },
-  { month: "Feb", cost: 1.2, sell: 1.45, profit: 0.65 },
-  { month: "Mar", cost: 1.25, sell: 1.5, profit: 0.6 },
-  { month: "Apr", cost: 1.3, sell: 1.55, profit: 0.65 },
-  { month: "May", cost: 1.45, sell: 1.6, profit: 0.75 },
-  { month: "Jun", cost: 1.5, sell: 1.62, profit: 0.7 },
-  { month: "Jul", cost: 1.68, sell: 1.72, profit: 0.85 },
-  { month: "Aug", cost: 1.55, sell: 1.68, profit: 0.75 },
-  { month: "Sep", cost: 1.6, sell: 1.7, profit: 0.78 },
-];
+function formatNumber(value) {
+  return toNumber(value).toLocaleString("en-US", {
+    maximumFractionDigits: 3,
+  });
+}
 
-const initialInventoryRows = [
-  { id: 1, tank: "Tank A", fuel: "Regular", source: "PTT-R1", lastAudit: "14800", meter: "5500200", nozzle: "A1,A2", cost: "1.20", price: "1.50", status: "Sufficient" },
-  { id: 2, tank: "Tank A", fuel: "Premium", source: "PTT-R1", lastAudit: "14800", meter: "5500200", nozzle: "A1,A2", cost: "1.30", price: "1.60", status: "Sufficient" },
-  { id: 3, tank: "Tank B", fuel: "Premium", source: "PTT-R1", lastAudit: "15000", meter: "5500200", nozzle: "A1,A2", cost: "1.50", price: "1.52", status: "Critical Low" },
-  { id: 4, tank: "Tank B", fuel: "Diesel", source: "PTT-R1", lastAudit: "15000", meter: "5500200", nozzle: "A1,A2", cost: "1.50", price: "1.99", status: "Sufficient" },
-  { id: 5, tank: "Tank C", fuel: "LPG", source: "PTT-R1", lastAudit: "10000", meter: "5500200", nozzle: "A1,A2", cost: "1.50", price: "1.99", status: "Critical Low" },
-  { id: 6, tank: "Tank D", fuel: "LPG", source: "PTT-R1", lastAudit: "14800", meter: "5500200", nozzle: "A1,A2", cost: "1.50", price: "1.99", status: "Check Status" },
-];
+function litersLabel(value) {
+  return `${formatNumber(value)} L`;
+}
 
-const recentActions = [
-  { label: "Refill: Tank A, 5,000L Super" },
-  { label: "Price Update: Regular 1.50 → 1.52" },
-  { label: "Pump A1 Calibrated" },
-  { label: "Stock Adjustment: Tank C -50L (Evap)" },
-  { label: "Tank B Low Stock Alert" },
-];
+function formatPrice(value) {
+  return toNumber(value).toFixed(3);
+}
 
-const dailySalesByType = [
-  { name: "Diesel", value: 45, color: "#0ea5e9" },
-  { name: "Regular", value: 55, color: "#f59e0b" },
-];
+function getFuelName(fuel) {
+  return fuel?.fuel_name || "Unknown Fuel";
+}
+
+function getResponseRows(response) {
+  const payload = response?.data;
+
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.data)) return payload.data;
+
+  return [];
+}
+
+function getTankStatus(tank) {
+  const current = toNumber(tank?.current_volume);
+  const minimum = toNumber(tank?.min_volume);
+  const capacity = toNumber(tank?.capacity);
+
+  if (tank?.status && tank.status !== "active") {
+    return "Check Status";
+  }
+
+  if (current <= minimum) return "Critical Low";
+
+  if (capacity > 0 && current / capacity >= 0.9) {
+    return "Check Status";
+  }
+
+  return "Sufficient";
+}
+
+// Get today's date in YYYY-MM-DD format using local time.
+function getLocalDateString() {
+  const date = new Date();
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
 
 function DotLegend({ items }) {
   return (
     <div className="mb-2 flex flex-wrap items-center gap-4 text-xs text-slate-600">
       {items.map((item) => (
         <span key={item.label} className="flex items-center gap-1.5">
-          <span className="h-2.5 w-2.5 rounded-full" style={{ background: item.color }} />
+          <span
+            className="h-2.5 w-2.5 rounded-full"
+            style={{ background: item.color }}
+          />
           {item.label}
         </span>
       ))}
@@ -79,36 +89,282 @@ function DotLegend({ items }) {
   );
 }
 
-function litersLabel(value) {
-  return `${value.toLocaleString()}L`;
-}
+// ======================================================
+// Fuel Management
+// ======================================================
 
 export default function FuelManagement() {
-  const [inventoryRows, setInventoryRows] = useState(initialInventoryRows);
-  const [modal, setModal] = useState(null); // "edit" | "view" | null
-  const [selectedFuel, setSelectedFuel] = useState(null);
+  // Main fuel-management data.
+  const [fuelTypes, setFuelTypes] = useState([]);
+  const [fuelTanks, setFuelTanks] = useState([]);
+  const [fuelPumps, setFuelPumps] = useState([]);
 
+  // Sales and activity-log data.
+  const [fuelSales, setFuelSales] = useState([]);
+  const [recentActions, setRecentActions] = useState([]);
+
+  // Loading and error states.
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [apiError, setApiError] = useState("");
+  const [salesError, setSalesError] = useState("");
+  const [actionsError, setActionsError] = useState("");
+  const [saveError, setSaveError] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
+
+  // Modal and selected record.
+  const [modal, setModal] = useState(null);
+  const [selectedFuel, setSelectedFuel] = useState(null);
   const [editFuel, setEditFuel] = useState({
-    tankFuel: "",
-    source: "",
-    lastAudit: "",
-    meterReading: "",
-    costPrice: "",
     sellingPrice: "",
-    status: "Sufficient",
   });
 
-  const handleOpenEdit = (row) => {
-    setSelectedFuel(row);
-    setEditFuel({
-      tankFuel: `${row.tank} · ${row.fuel}`,
-      source: row.source,
-      lastAudit: row.lastAudit,
-      meterReading: row.meter,
-      costPrice: row.cost,
-      sellingPrice: row.price,
-      status: row.status,
+  // ----------------------------------------------------
+  // Fetch all pages of today's sales.
+  // FuelSaleController paginates records by 15 by default.
+  // This loop prevents the daily total from using only
+  // the first 15 sales records.
+  // ----------------------------------------------------
+  const fetchTodaySales = useCallback(async () => {
+    const today = getLocalDateString();
+    const allSales = [];
+    let page = 1;
+    let lastPage = 1;
+
+    do {
+      const response = await api.get("/fuel-sales", {
+        params: {
+          date: today,
+          page,
+        },
+      });
+
+      const payload = response.data;
+      const rows = Array.isArray(payload?.data)
+        ? payload.data
+        : [];
+
+      allSales.push(...rows);
+
+      // Laravel pagination metadata is returned alongside data.
+      lastPage = Math.max(
+        1,
+        toNumber(payload?.last_page) || 1
+      );
+
+      page += 1;
+    } while (page <= lastPage);
+
+    setFuelSales(allSales);
+  }, []);
+
+  // ----------------------------------------------------
+  // Fetch the main data and optional dashboard sections.
+  // ----------------------------------------------------
+  const fetchFuelManagementData = useCallback(async () => {
+    setLoading(true);
+    setApiError("");
+    setSalesError("");
+    setActionsError("");
+
+    try {
+      const [typesResponse, tanksResponse, pumpsResponse] =
+        await Promise.all([
+          api.get("/fuel-types"),
+          api.get("/fuel-tanks"),
+          api.get("/fuel-pumps"),
+        ]);
+
+      setFuelTypes(getResponseRows(typesResponse));
+      setFuelTanks(getResponseRows(tanksResponse));
+      setFuelPumps(getResponseRows(pumpsResponse));
+    } catch (error) {
+      setApiError(
+        error.response?.data?.message ||
+        error.message ||
+        "Unable to load Fuel Management data."
+      );
+    } finally {
+      setLoading(false);
+    }
+
+    // Optional section: a sales failure should not hide
+    // the tank, pump, and fuel-type information.
+    try {
+      await fetchTodaySales();
+    } catch (error) {
+      setFuelSales([]);
+      setSalesError(
+        error.response?.data?.message ||
+        error.message ||
+        "Unable to load today's fuel sales."
+      );
+    }
+
+    // AuditLogController returns its records in data.
+    try {
+      const response = await api.get("/activity-logs");
+      setRecentActions(getResponseRows(response));
+    } catch (error) {
+      setRecentActions([]);
+      setActionsError(
+        error.response?.data?.message ||
+        error.message ||
+        "Unable to load recent actions."
+      );
+    }
+  }, [fetchTodaySales]);
+
+  useEffect(() => {
+    fetchFuelManagementData();
+  }, [fetchFuelManagementData]);
+
+  // ----------------------------------------------------
+  // Match fuel types to tanks and pumps.
+  // ----------------------------------------------------
+  const fuelTypeMap = useMemo(
+    () =>
+      new Map(
+        fuelTypes.map((fuel) => [
+          String(fuel.fuel_id),
+          fuel,
+        ])
+      ),
+    [fuelTypes]
+  );
+
+  const stockByTank = useMemo(() => {
+    const colors = [
+      { dark: "#2563eb", light: "#93c5fd" },
+      { dark: "#f59e0b", light: "#fcd34d" },
+      { dark: "#475569", light: "#94a3b8" },
+      { dark: "#0d9488", light: "#5eead4" },
+    ];
+
+    return fuelTanks.map((tank, index) => {
+      const fuel = fuelTypeMap.get(String(tank.fuel_id));
+      const color = colors[index % colors.length];
+
+      return {
+        id: tank.tank_id,
+        tank: tank.tank_number || `Tank ${tank.tank_id}`,
+        fuel: getFuelName(fuel),
+        current: toNumber(tank.current_volume),
+        capacity: toNumber(tank.capacity),
+        dark: color.dark,
+        light: color.light,
+      };
     });
+  }, [fuelTanks, fuelTypeMap]);
+
+  const inventoryRows = useMemo(
+    () =>
+      fuelTanks.map((tank) => {
+        const fuel = fuelTypeMap.get(String(tank.fuel_id));
+
+        return {
+          id: tank.tank_id,
+          tankId: tank.tank_id,
+          fuelId: tank.fuel_id,
+          tank: tank.tank_number || `Tank ${tank.tank_id}`,
+          fuel: getFuelName(fuel),
+          currentVolume: toNumber(tank.current_volume),
+          capacity: toNumber(tank.capacity),
+          minimumVolume: toNumber(tank.min_volume),
+          tankStatus: tank.status || "unknown",
+          cost: fuel?.purchase_price ?? null,
+          price: fuel?.selling_price ?? null,
+          rawTank: tank,
+          rawFuel: fuel || null,
+        };
+      }),
+    [fuelTanks, fuelTypeMap]
+  );
+
+  const pumpCards = useMemo(
+    () =>
+      fuelPumps.map((pump) => {
+        const fuel = fuelTypeMap.get(String(pump.fuel_id));
+
+        return {
+          id: pump.pump_id,
+          number: pump.pump_number || `Pump ${pump.pump_id}`,
+          status: pump.status || "unknown",
+          meterReading: toNumber(pump.meter_reading),
+          fuel: getFuelName(fuel),
+          image: pumpImage,
+        };
+      }),
+    [fuelPumps, fuelTypeMap]
+  );
+
+  const priceChartData = useMemo(
+    () =>
+      fuelTypes.map((fuel) => ({
+        name: fuel.fuel_name || `Fuel ${fuel.fuel_id}`,
+        cost: toNumber(fuel.purchase_price),
+        sell: toNumber(fuel.selling_price),
+        profit:
+          toNumber(fuel.selling_price) -
+          toNumber(fuel.purchase_price),
+      })),
+    [fuelTypes]
+  );
+
+  // ----------------------------------------------------
+  // Calculate today's sold liters by fuel type.
+  // The backend query already filters sales by today's date.
+  // Only paid sales are included in this calculation.
+  // ----------------------------------------------------
+  const dailySalesByType = useMemo(() => {
+    const totals = new Map();
+
+    fuelSales.forEach((sale) => {
+      if (String(sale.payment_status).toLowerCase() !== "paid") {
+        return;
+      }
+
+      const fuelId = String(sale.fuel_id);
+      const quantity = toNumber(sale.quantity);
+
+      totals.set(
+        fuelId,
+        (totals.get(fuelId) || 0) + quantity
+      );
+    });
+
+    return fuelTypes.map((fuel) => ({
+      fuelId: fuel.fuel_id,
+      name: fuel.fuel_name || `Fuel ${fuel.fuel_id}`,
+      liters: totals.get(String(fuel.fuel_id)) || 0,
+    }));
+  }, [fuelSales, fuelTypes]);
+
+  const totalTodayLiters = dailySalesByType.reduce(
+    (sum, item) => sum + item.liters,
+    0
+  );
+
+  // ----------------------------------------------------
+  // Edit selling price.
+  // ----------------------------------------------------
+  const handleOpenEdit = (row) => {
+    if (!row.rawFuel) {
+      setApiError(
+        "The fuel type for this tank could not be found."
+      );
+      return;
+    }
+
+    setApiError("");
+    setSaveError("");
+    setSuccessMessage("");
+    setSelectedFuel(row);
+
+    setEditFuel({
+      sellingPrice: String(row.rawFuel.selling_price ?? ""),
+    });
+
     setModal("edit");
   };
 
@@ -117,297 +373,695 @@ export default function FuelManagement() {
     setModal("view");
   };
 
-  const handleSaveEdit = (e) => {
-    e.preventDefault();
-    const [tank, fuel] = editFuel.tankFuel.split("·").map((s) => s.trim());
+  const handleSaveEdit = async (event) => {
+    event.preventDefault();
 
-    setInventoryRows(
-      inventoryRows.map((r) =>
-        r.id === selectedFuel.id
-          ? {
-              ...r,
-              tank: tank || r.tank,
-              fuel: fuel || r.fuel,
-              source: editFuel.source,
-              lastAudit: editFuel.lastAudit,
-              meter: editFuel.meterReading,
-              cost: editFuel.costPrice,
-              price: editFuel.sellingPrice,
-              status: editFuel.status,
-            }
-          : r
-      )
-    );
+    if (!selectedFuel?.rawFuel?.fuel_id) {
+      setSaveError("No valid fuel type was selected.");
+      return;
+    }
 
-    alert(`Successfully updated information for ${editFuel.tankFuel}!`);
-    setModal(null);
+    const sellingPrice = Number(editFuel.sellingPrice);
+
+    if (
+      editFuel.sellingPrice.trim() === "" ||
+      !Number.isFinite(sellingPrice) ||
+      sellingPrice < 0
+    ) {
+      setSaveError(
+        "Please enter a valid selling price of 0 or higher."
+      );
+      return;
+    }
+
+    setSaving(true);
+    setSaveError("");
+    setSuccessMessage("");
+
+    try {
+      const fuelId = selectedFuel.rawFuel.fuel_id;
+
+      const response = await api.put(`/fuel-types/${fuelId}`, {
+        selling_price: sellingPrice,
+      });
+
+      const updatedFuel = response.data?.data;
+
+      setFuelTypes((previous) =>
+        previous.map((fuel) =>
+          String(fuel.fuel_id) === String(fuelId)
+            ? {
+                ...fuel,
+                ...(updatedFuel || {}),
+                selling_price:
+                  updatedFuel?.selling_price ?? sellingPrice,
+              }
+            : fuel
+        )
+      );
+
+      setSuccessMessage(
+        "Fuel selling price updated successfully."
+      );
+      setModal(null);
+      setSelectedFuel(null);
+    } catch (error) {
+      setSaveError(
+        error.response?.data?.errors?.selling_price?.[0] ||
+        error.response?.data?.message ||
+        error.message ||
+        "Unable to save the selling price."
+      );
+    } finally {
+      setSaving(false);
+    }
   };
 
+  // Summary calculations.
+  const totalStock = stockByTank.reduce(
+    (sum, tank) => sum + tank.current,
+    0
+  );
+
+  const totalCapacity = stockByTank.reduce(
+    (sum, tank) => sum + tank.capacity,
+    0
+  );
+
+  const lowStockCount = inventoryRows.filter(
+    (row) => getTankStatus(row.rawTank) === "Critical Low"
+  ).length;
+
+  // ----------------------------------------------------
+  // Render
+  // ----------------------------------------------------
   return (
     <div className="space-y-4 bg-gray-400 p-6">
-      <div className="grid grid-cols-3 gap-4">
-        {/* Active pumps */}
+      {loading && (
+        <div className="rounded-lg bg-white p-4 text-slate-600">
+          Loading Fuel Management data...
+        </div>
+      )}
+
+      {apiError && (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-700">
+          <p className="font-medium">Unable to load data</p>
+          <p className="mt-1 text-sm">{apiError}</p>
+          <button
+            type="button"
+            onClick={fetchFuelManagementData}
+            disabled={loading}
+            className="mt-3 inline-flex items-center gap-2 rounded-lg bg-red-600 px-3 py-2 text-sm text-white disabled:opacity-50"
+          >
+            <RefreshCw size={15} /> Try Again
+          </button>
+        </div>
+      )}
+
+      {successMessage && (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">
+          {successMessage}
+        </div>
+      )}
+
+      {/* First row: pumps, tank stock, and fuel prices. */}
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         <Panel>
-          <h3 className="mb-4 text-xl font-bold text-slate-800">Active Pumps (Liters Dispensed)</h3>
-          <div className="grid grid-cols-2 gap-3">
-            {initialPumps.map((p) => (
-              <div key={p.id} className="flex items-center gap-3 rounded-lg bg-slate-200 p-3">
-                <div className="relative shrink-0">
-                  <img src={p.image} alt={`Pump ${p.id}`} className="h-15 w-11 object-contain" />
-                  <span className="absolute -bottom-1 -left-1 flex h-4 w-4 items-center justify-center rounded-full bg-cyan-500 text-[9px] font-bold text-white">
-                    {p.id}
-                  </span>
+          <h3 className="mb-4 text-xl font-bold text-slate-800">
+            Fuel Pumps
+          </h3>
+
+          {pumpCards.length === 0 && !loading ? (
+            <p className="text-sm text-slate-500">
+              No fuel pumps found.
+            </p>
+          ) : (
+            <div className="grid grid-cols-2 gap-3">
+              {pumpCards.map((pump) => (
+                <div
+                  key={pump.id}
+                  className="flex items-center gap-3 rounded-lg bg-slate-200 p-3"
+                >
+                  <img
+                    src={pump.image}
+                    alt={pump.number}
+                    className="h-15 w-11 shrink-0 object-contain"
+                  />
+                  <div className="min-w-0">
+                    <div className="break-words text-sm font-bold text-slate-800">
+                      {pump.number}
+                    </div>
+                    <div className="text-xs font-semibold text-slate-600">
+                      {pump.status.replaceAll("_", " ")}
+                    </div>
+                    <div className="mt-1 text-xs text-slate-600">
+                      {pump.fuel}
+                    </div>
+                    <div className="mt-1 text-xs text-slate-600">
+                      Meter: {formatNumber(pump.meterReading)}
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <div className="text-sm font-bold text-slate-800">{p.id}</div>
-                  <div className="text-xs font-semibold text-emerald-600">{p.status}</div>
-                  <div className="text-sm font-medium text-slate-600">{p.vol}</div>
-                </div>
+              ))}
+            </div>
+          )}
+        </Panel>
+
+        <Panel>
+          <h3 className="mb-4 text-xl font-bold text-slate-800">
+            Live Stock Volumes (By Tank)
+          </h3>
+
+          <DotLegend
+            items={[
+              { label: "Current Volume", color: "#2563eb" },
+              { label: "Tank Capacity", color: "#93c5fd" },
+            ]}
+          />
+
+          <div className="mb-3 grid grid-cols-2 gap-3">
+            <div className="rounded-lg bg-slate-100 p-3">
+              <p className="text-xs text-slate-500">Current Stock</p>
+              <p className="mt-1 text-lg font-bold text-slate-800">
+                {formatNumber(totalStock)} L
+              </p>
+            </div>
+            <div className="rounded-lg bg-slate-100 p-3">
+              <p className="text-xs text-slate-500">Total Capacity</p>
+              <p className="mt-1 text-lg font-bold text-slate-800">
+                {formatNumber(totalCapacity)} L
+              </p>
+            </div>
+          </div>
+
+          {stockByTank.length > 0 ? (
+            <ResponsiveContainer width="100%" height={190}>
+              <BarChart
+                data={stockByTank}
+                margin={{ top: 20, right: 8, left: 0, bottom: 5 }}
+              >
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                  stroke="#eef2f7"
+                  vertical={false}
+                />
+                <XAxis
+                  dataKey="tank"
+                  tick={{ fontSize: 10, fill: "#64748b" }}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <YAxis
+                  tick={{ fontSize: 10, fill: "#64748b" }}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <Tooltip formatter={(value) => litersLabel(value)} />
+                <Bar
+                  dataKey="current"
+                  name="Current Volume"
+                  fill="#2563eb"
+                  radius={[3, 3, 0, 0]}
+                  barSize={18}
+                >
+                  <LabelList
+                    dataKey="current"
+                    position="top"
+                    formatter={litersLabel}
+                    style={{ fontSize: 9, fill: "#475569" }}
+                  />
+                </Bar>
+                <Bar
+                  dataKey="capacity"
+                  name="Capacity"
+                  fill="#93c5fd"
+                  radius={[3, 3, 0, 0]}
+                  barSize={18}
+                >
+                  <LabelList
+                    dataKey="capacity"
+                    position="top"
+                    formatter={litersLabel}
+                    style={{ fontSize: 9, fill: "#475569" }}
+                  />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <p className="py-8 text-center text-sm text-slate-500">
+              No tank data available.
+            </p>
+          )}
+        </Panel>
+
+        <Panel>
+          <h3 className="mb-4 text-xl font-bold text-slate-800">
+            Fuel Price Overview
+          </h3>
+          <p className="mb-3 text-xs text-slate-500">
+            Current purchase and selling prices from the database.
+          </p>
+
+          <DotLegend
+            items={[
+              { label: "Purchase Price", color: "#2563eb" },
+              { label: "Selling Price", color: "#f59e0b" },
+            ]}
+          />
+
+          {priceChartData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={190}>
+              <AreaChart
+                data={priceChartData}
+                margin={{ top: 8, right: 8, left: 0, bottom: 5 }}
+              >
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                  stroke="#eef2f7"
+                />
+                <XAxis
+                  dataKey="name"
+                  tick={{ fontSize: 10, fill: "#64748b" }}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <YAxis
+                  tick={{ fontSize: 10, fill: "#64748b" }}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <Tooltip formatter={(value) => formatPrice(value)} />
+                <Area
+                  type="monotone"
+                  dataKey="cost"
+                  name="Purchase Price"
+                  stroke="#2563eb"
+                  fill="#2563eb20"
+                  strokeWidth={2}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="sell"
+                  name="Selling Price"
+                  stroke="#f59e0b"
+                  fill="#f59e0b20"
+                  strokeWidth={2}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          ) : (
+            <p className="py-8 text-center text-sm text-slate-500">
+              No fuel price data available.
+            </p>
+          )}
+
+          <p className="mt-2 text-xs text-slate-500">
+            These are current prices, not historical prices.
+          </p>
+        </Panel>
+      </div>
+
+      {/* Today's fuel sales. */}
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <Panel>
+          <h3 className="mb-1 text-xl font-bold text-slate-800">
+            Today's Fuel Sales
+          </h3>
+          <p className="mb-4 text-xs text-slate-500">
+            Paid sales for {getLocalDateString()}
+          </p>
+
+          <div className="rounded-lg bg-blue-50 p-4">
+            <p className="text-sm text-blue-700">
+              Total Liters Sold
+            </p>
+            <p className="mt-1 text-2xl font-bold text-blue-900">
+              {formatNumber(totalTodayLiters)} L
+            </p>
+          </div>
+
+          {salesError && (
+            <p className="mt-3 text-sm text-red-600">
+              {salesError}
+            </p>
+          )}
+
+          <div className="mt-4 space-y-3">
+            {dailySalesByType.map((item) => (
+              <div
+                key={item.fuelId}
+                className="flex items-center justify-between gap-3 border-b border-slate-100 pb-2 text-sm"
+              >
+                <span className="text-slate-600">{item.name}</span>
+                <span className="font-semibold text-slate-800">
+                  {formatNumber(item.liters)} L
+                </span>
+              </div>
+            ))}
+
+            {dailySalesByType.length === 0 && !salesError && (
+              <p className="text-sm text-slate-500">
+                No fuel types available.
+              </p>
+            )}
+          </div>
+        </Panel>
+
+        {/* Recent audit actions. */}
+        <Panel>
+          <h3 className="mb-4 text-xl font-bold text-slate-800">
+            Recent Actions
+          </h3>
+
+          {actionsError && (
+            <p className="mb-3 text-sm text-red-600">
+              {actionsError}
+            </p>
+          )}
+
+          <div className="space-y-3">
+            {recentActions.slice(0, 5).map((log) => (
+              <div
+                key={log.log_id}
+                className="border-b border-slate-100 pb-3"
+              >
+                <p className="font-semibold text-slate-800">
+                  {log.action || "Unknown action"}
+                </p>
+                <p className="mt-1 text-sm text-slate-600">
+                  {log.entity_type || "Unknown entity"}
+                  {log.entity_id != null
+                    ? ` #${log.entity_id}`
+                    : ""}
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  By: {log.user?.full_name || "Unknown user"}
+                </p>
+                <p className="mt-1 text-xs text-slate-400">
+                  {log.created_at
+                    ? new Date(log.created_at).toLocaleString()
+                    : "No date"}
+                </p>
+              </div>
+            ))}
+
+            {recentActions.length === 0 && !actionsError && (
+              <p className="text-sm text-slate-500">
+                No recent actions found.
+              </p>
+            )}
+          </div>
+        </Panel>
+
+        {/* Stock summary. */}
+        <Panel>
+          <h3 className="mb-4 text-xl font-bold text-slate-800">
+            Stock Summary
+          </h3>
+
+          <div className="space-y-3">
+            {[
+              ["Total Fuel Types", fuelTypes.length],
+              ["Total Tanks", fuelTanks.length],
+              ["Total Pumps", fuelPumps.length],
+              ["Tanks at or below minimum stock", lowStockCount],
+            ].map(([label, value]) => (
+              <div
+                key={label}
+                className="rounded-lg bg-slate-100 p-3"
+              >
+                <p className="text-xs text-slate-500">{label}</p>
+                <p className="mt-1 text-2xl font-bold text-slate-800">
+                  {value}
+                </p>
               </div>
             ))}
           </div>
         </Panel>
-
-        {/* Live stock volumes by tank */}
-        <Panel>
-          <h3 className="mb-4 text-xl font-bold text-slate-800">Live Stock Volumes (By Tank)</h3>
-          <DotLegend items={stockByTank.map((t) => ({ label: t.fuel, color: t.dark }))} />
-          <ResponsiveContainer width="100%" height={170}>
-            <BarChart data={stockByTank} margin={{ top: 20 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" vertical={false} />
-              <XAxis dataKey="tank" tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
-              <Tooltip formatter={(value) => litersLabel(value)} />
-              <Bar dataKey="current" radius={[3, 3, 0, 0]} barSize={22}>
-                {stockByTank.map((t) => (
-                  <Cell key={`current-${t.tank}`} fill={t.dark} />
-                ))}
-                <LabelList dataKey="current" position="top" formatter={litersLabel} style={{ fontSize: 10, fill: "#475569" }} />
-              </Bar>
-              <Bar dataKey="capacity" radius={[3, 3, 0, 0]} barSize={22}>
-                {stockByTank.map((t) => (
-                  <Cell key={`capacity-${t.tank}`} fill={t.light} />
-                ))}
-                <LabelList dataKey="capacity" position="top" formatter={litersLabel} style={{ fontSize: 10, fill: "#475569" }} />
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </Panel>
-
-        {/* Fuel price performance */}
-        <Panel>
-          <h3 className="mb-4 text-xl font-bold text-slate-800">Fuel Price Performance</h3>
-          <p className="mb-2 text-xs text-slate-400">(expanded price section)</p>
-          <DotLegend
-            items={[
-              { label: "Avg. Cost Price", color: "#2563eb" },
-              { label: "Selling Price", color: "#f59e0b" },
-              { label: "Profit Margin", color: "#64748b" },
-            ]}
-          />
-          <ResponsiveContainer width="100%" height={150}>
-            <AreaChart data={priceHistory}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" />
-              <XAxis dataKey="month" tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
-              <Tooltip />
-              <Area type="monotone" dataKey="cost" name="Avg. Cost Price" stroke="#2563eb" fill="#2563eb20" strokeWidth={2} />
-              <Area type="monotone" dataKey="sell" name="Selling Price" stroke="#f59e0b" fill="#f59e0b20" strokeWidth={2} />
-              <Area type="monotone" dataKey="profit" name="Profit Margin" stroke="#64748b" fill="#64748b15" strokeWidth={1.5} />
-            </AreaChart>
-          </ResponsiveContainer>
-        </Panel>
       </div>
 
-      <div className="grid grid-cols-3 gap-4">
-        {/* Inventory table */}
-        <Panel title="" className="col-span-2">
-          <h3 className="mb-4 text-xl font-bold text-slate-800">Inventory Management Table</h3>
+      {/* Inventory table and tank stock details. */}
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <Panel className="xl:col-span-2">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <h3 className="text-xl font-bold text-slate-800">
+              Inventory Management Table
+            </h3>
+            <button
+              type="button"
+              onClick={fetchFuelManagementData}
+              disabled={loading}
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              <RefreshCw size={15} /> Refresh
+            </button>
+          </div>
+
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[640px] text-left text-xs">
+            <table className="w-full min-w-[720px] text-left text-xs">
               <thead>
-                <tr className="text-black text-lg">
-                  <th className="pb-2 font-medium">ID</th>
-                  <th className="pb-2 font-medium">Tank / Fuel</th>
-                  <th className="pb-2 font-medium">Source</th>
-                  <th className="pb-2 font-medium">Last Audit (L)</th>
-                  <th className="pb-2 font-medium">Meter Reading</th>
-                  <th className="pb-2 font-medium">Cost/Price</th>
-                  <th className="pb-2 font-medium">Status</th>
-                  <th className="pb-2 font-medium">Actions</th>
+                <tr className="text-sm text-slate-800">
+                  <th className="pb-3 pr-3">ID</th>
+                  <th className="pb-3 pr-3">Tank / Fuel</th>
+                  <th className="pb-3 pr-3">Current (L)</th>
+                  <th className="pb-3 pr-3">Capacity (L)</th>
+                  <th className="pb-3 pr-3">Min. Stock</th>
+                  <th className="pb-3 pr-3">Cost / Price</th>
+                  <th className="pb-3 pr-3">Status</th>
+                  <th className="pb-3">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {inventoryRows.map((r) => (
-                  <tr key={r.id} className="border-t border-slate-200">
-                    <td className="py-2 text-slate-500">{r.id}</td>
-                    <td className="py-2 font-medium text-black">
-                      {r.tank} · {r.fuel}
-                    </td>
-                    <td className="py-2 text-black">{r.source}</td>
-                    <td className="py-2 text-black">{r.lastAudit}</td>
-                    <td className="py-2 text-black">
-                      {r.meter} <span className="text-black">({r.nozzle})</span>
-                    </td>
-                    <td className="py-2 text-black">
-                      ${r.cost} / ${r.price}
-                    </td>
-                    <td className="py-2">
-                      <StatusBadge status={r.status} />
-                    </td>
-                    <td className="py-2">
-                      <button onClick={() => handleOpenView(r)} className="mr-2 text-cyan-600 hover:underline">
-                        View
-                      </button>
-                      <button onClick={() => handleOpenEdit(r)} className="text-fuchsia-500 hover:underline">
-                        Edit
-                      </button>
+                {inventoryRows.map((row) => {
+                  const status = getTankStatus(row.rawTank);
+
+                  return (
+                    <tr
+                      key={row.id}
+                      className="border-t border-slate-200"
+                    >
+                      <td className="py-3 pr-3 text-slate-600">
+                        {row.id}
+                      </td>
+                      <td className="py-3 pr-3 font-medium text-slate-800">
+                        <div>{row.tank}</div>
+                        <div className="mt-1 text-slate-500">
+                          {row.fuel}
+                        </div>
+                      </td>
+                      <td className="py-3 pr-3">
+                        {formatNumber(row.currentVolume)}
+                      </td>
+                      <td className="py-3 pr-3">
+                        {formatNumber(row.capacity)}
+                      </td>
+                      <td className="py-3 pr-3">
+                        {formatNumber(row.minimumVolume)}
+                      </td>
+                      <td className="py-3 pr-3">
+                        {row.cost !== null && row.price !== null
+                          ? `${formatPrice(row.cost)} / ${formatPrice(row.price)}`
+                          : "Not available"}
+                      </td>
+                      <td className="py-3 pr-3">
+                        <StatusBadge status={status} />
+                      </td>
+                      <td className="py-3">
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenView(row)}
+                            title="View details"
+                            className="text-cyan-600 hover:underline"
+                          >
+                            <Eye size={16} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEdit(row)}
+                            title="Edit selling price"
+                            disabled={!row.rawFuel}
+                            className="text-fuchsia-600 hover:underline disabled:opacity-40"
+                          >
+                            Edit
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+
+                {inventoryRows.length === 0 && !loading && (
+                  <tr>
+                    <td
+                      colSpan={8}
+                      className="py-8 text-center text-slate-500"
+                    >
+                      No inventory records found.
                     </td>
                   </tr>
-                ))}
+                )}
               </tbody>
             </table>
           </div>
         </Panel>
 
-        <div className="space-y-4">
-          {/* Recent actions */}
-          <Panel>
-            <h3 className="mb-4 text-xl font-bold text-slate-800">Recent Actions & Reconciliation</h3>
-            <ul className="space-y-2">
-              {recentActions.map((a, i) => (
-                <li key={i} className="rounded-lg bg-slate-200 p-2 text-xs text-black">
-                  {a.label}
-                </li>
-              ))}
-            </ul>
-          </Panel>
+        <Panel>
+          <h3 className="mb-4 text-xl font-bold text-slate-800">
+            Tank Stock Details
+          </h3>
 
-          {/* Total daily sales */}
-          <Panel>
-            <h3 className="mb-4 text-xl font-bold text-slate-800">Total Daily Sales</h3>
-            <div className="flex items-center justify-center gap-4">
-              <div className="flex flex-col gap-1 text-xs text-slate-500">
-                {dailySalesByType.map((s) => (
-                  <span key={s.name} className="flex items-center gap-1.5">
-                    <span className="h-2 w-2 rounded-full" style={{ background: s.color }} />
-                    {s.name} ({s.value}%)
-                  </span>
-                ))}
-              </div>
+          {stockByTank.length === 0 ? (
+            <p className="text-sm text-slate-500">
+              No tank data available.
+            </p>
+          ) : (
+            <div className="space-y-4">
+              {stockByTank.map((tank) => {
+                const percentage =
+                  tank.capacity > 0
+                    ? Math.min(
+                        100,
+                        Math.max(
+                          0,
+                          (tank.current / tank.capacity) * 100
+                        )
+                      )
+                    : 0;
+
+                return (
+                  <div key={tank.id}>
+                    <div className="mb-1 flex justify-between gap-2 text-xs">
+                      <span className="font-medium text-slate-700">
+                        {tank.tank} · {tank.fuel}
+                      </span>
+                      <span className="text-slate-500">
+                        {percentage.toFixed(1)}%
+                      </span>
+                    </div>
+                    <div className="h-2 overflow-hidden rounded-full bg-slate-200">
+                      <div
+                        className="h-full rounded-full"
+                        style={{
+                          width: `${percentage}%`,
+                          backgroundColor: tank.dark,
+                        }}
+                      />
+                    </div>
+                    <p className="mt-1 text-xs text-slate-500">
+                      {formatNumber(tank.current)} L of{" "}
+                      {formatNumber(tank.capacity)} L
+                    </p>
+                  </div>
+                );
+              })}
             </div>
-          </Panel>
-        </div>
+          )}
+        </Panel>
       </div>
 
-      {/* ================= MODALS ================= */}
-
-      {/* Edit Modal */}
+      {/* Edit selling-price modal. */}
       {modal === "edit" && selectedFuel && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-xl rounded-2xl bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b px-6 py-4">
               <div>
-                <h2 className="text-xl font-bold text-slate-800">Edit Fuel Information</h2>
-                <p className="text-sm text-slate-500">Update fuel management information</p>
+                <h2 className="text-xl font-bold text-slate-800">
+                  Edit Fuel Selling Price
+                </h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Update the selling price stored in the database.
+                </p>
               </div>
-              <button onClick={() => setModal(null)} className="rounded-full p-2 hover:bg-slate-100">
+              <button
+                type="button"
+                onClick={() => {
+                  setModal(null);
+                  setSaveError("");
+                }}
+                className="rounded-full p-2 hover:bg-slate-100"
+                aria-label="Close modal"
+              >
                 <X size={20} />
               </button>
             </div>
 
             <form onSubmit={handleSaveEdit} className="space-y-4 p-6">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">Tank / Fuel</label>
-                  <input
-                    type="text"
-                    value={editFuel.tankFuel}
-                    onChange={(e) => setEditFuel({ ...editFuel, tankFuel: e.target.value })}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-cyan-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">Source</label>
-                  <input
-                    type="text"
-                    value={editFuel.source}
-                    onChange={(e) => setEditFuel({ ...editFuel, source: e.target.value })}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-cyan-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">Last Audit (L)</label>
-                  <input
-                    type="text"
-                    value={editFuel.lastAudit}
-                    onChange={(e) => setEditFuel({ ...editFuel, lastAudit: e.target.value })}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-cyan-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">Meter Reading</label>
-                  <input
-                    type="text"
-                    value={editFuel.meterReading}
-                    onChange={(e) => setEditFuel({ ...editFuel, meterReading: e.target.value })}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-cyan-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">Cost Price</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={editFuel.costPrice}
-                    onChange={(e) => setEditFuel({ ...editFuel, costPrice: e.target.value })}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-cyan-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">Selling Price</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={editFuel.sellingPrice}
-                    onChange={(e) => setEditFuel({ ...editFuel, sellingPrice: e.target.value })}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-cyan-500"
-                  />
-                </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">
+                  Fuel Type
+                </label>
+                <input
+                  value={selectedFuel.fuel}
+                  readOnly
+                  className="w-full rounded-lg border border-slate-300 bg-slate-100 px-3 py-2"
+                />
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">Status</label>
-                <select
-                  value={editFuel.status}
-                  onChange={(e) => setEditFuel({ ...editFuel, status: e.target.value })}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-cyan-500"
-                >
-                  <option value="Sufficient">Sufficient</option>
-                  <option value="Critical Low">Critical Low</option>
-                  <option value="Check Status">Check Status</option>
-                </select>
+                <label className="mb-1 block text-sm font-medium text-slate-700">
+                  Current Purchase Price
+                </label>
+                <input
+                  value={
+                    selectedFuel.rawFuel?.purchase_price ??
+                    "Not available"
+                  }
+                  readOnly
+                  className="w-full rounded-lg border border-slate-300 bg-slate-100 px-3 py-2"
+                />
               </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">
+                  Selling Price
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.001"
+                  required
+                  value={editFuel.sellingPrice}
+                  onChange={(event) =>
+                    setEditFuel({
+                      ...editFuel,
+                      sellingPrice: event.target.value,
+                    })
+                  }
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-cyan-500"
+                />
+              </div>
+
+              {saveError && (
+                <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                  {saveError}
+                </div>
+              )}
+
+              <p className="rounded-lg bg-blue-50 p-3 text-xs text-blue-700">
+                Only the selling price is editable through the current
+                FuelTypeController update endpoint.
+              </p>
 
               <div className="flex justify-end gap-2 border-t pt-4">
                 <button
                   type="button"
-                  onClick={() => setModal(null)}
-                  className="rounded-lg border border-slate-300 px-5 py-2 text-sm text-slate-600 hover:bg-slate-50"
+                  onClick={() => {
+                    setModal(null);
+                    setSaveError("");
+                  }}
+                  disabled={saving}
+                  className="rounded-lg border border-slate-300 px-5 py-2 text-sm text-slate-600"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="flex items-center gap-2 rounded-lg bg-cyan-500 px-5 py-2 text-sm font-medium text-white hover:bg-cyan-600"
+                  disabled={saving}
+                  className="flex items-center gap-2 rounded-lg bg-cyan-500 px-5 py-2 text-sm font-medium text-white hover:bg-cyan-600 disabled:opacity-50"
                 >
                   <Save size={15} />
-                  Save Changes
+                  {saving ? "Saving..." : "Save Changes"}
                 </button>
               </div>
             </form>
@@ -415,45 +1069,76 @@ export default function FuelManagement() {
         </div>
       )}
 
-      {/* View Modal */}
+      {/* View tank details modal. */}
       {modal === "view" && selectedFuel && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b px-6 py-4">
               <div>
-                <h2 className="text-xl font-bold text-slate-800">View Fuel Details</h2>
-                <p className="text-sm text-slate-500">Information for ID: {selectedFuel.id}</p>
+                <h2 className="text-xl font-bold text-slate-800">
+                  View Fuel Details
+                </h2>
+                <p className="text-sm text-slate-500">
+                  Tank ID: {selectedFuel.tankId}
+                </p>
               </div>
-              <button onClick={() => setModal(null)} className="rounded-full p-2 hover:bg-slate-100">
+              <button
+                type="button"
+                onClick={() => setModal(null)}
+                className="rounded-full p-2 hover:bg-slate-100"
+                aria-label="Close modal"
+              >
                 <X size={20} />
               </button>
             </div>
 
             <div className="space-y-4 p-6 text-sm text-slate-700">
-              <div className="flex justify-between border-b pb-2">
-                <span className="font-semibold">Tank / Fuel:</span>
-                <span>{selectedFuel.tank} - {selectedFuel.fuel}</span>
-              </div>
-              <div className="flex justify-between border-b pb-2">
-                <span className="font-semibold">Source:</span>
-                <span>{selectedFuel.source}</span>
-              </div>
-              <div className="flex justify-between border-b pb-2">
-                <span className="font-semibold">Last Audit (L):</span>
-                <span>{selectedFuel.lastAudit} L</span>
-              </div>
-              <div className="flex justify-between border-b pb-2">
-                <span className="font-semibold">Meter Reading:</span>
-                <span>{selectedFuel.meter} ({selectedFuel.nozzle})</span>
-              </div>
-              <div className="flex justify-between border-b pb-2">
-                <span className="font-semibold">Cost / Selling Price:</span>
-                <span>${selectedFuel.cost} / ${selectedFuel.price}</span>
-              </div>
-              <div className="flex justify-between pb-2">
-                <span className="font-semibold">Status:</span>
-                <StatusBadge status={selectedFuel.status} />
-              </div>
+              {[
+                ["Tank Number", selectedFuel.tank],
+                ["Fuel Type", selectedFuel.fuel],
+                [
+                  "Current Volume",
+                  `${formatNumber(selectedFuel.currentVolume)} L`,
+                ],
+                [
+                  "Tank Capacity",
+                  `${formatNumber(selectedFuel.capacity)} L`,
+                ],
+                [
+                  "Minimum Stock",
+                  `${formatNumber(selectedFuel.minimumVolume)} L`,
+                ],
+                [
+                  "Purchase Price",
+                  selectedFuel.cost === null
+                    ? "Not available"
+                    : formatPrice(selectedFuel.cost),
+                ],
+                [
+                  "Selling Price",
+                  selectedFuel.price === null
+                    ? "Not available"
+                    : formatPrice(selectedFuel.price),
+                ],
+                ["Tank Status", selectedFuel.tankStatus],
+                [
+                  "Last Inspection",
+                  selectedFuel.rawTank?.last_inspection ||
+                    "Not recorded",
+                ],
+                [
+                  "Location",
+                  selectedFuel.rawTank?.location || "Not recorded",
+                ],
+              ].map(([label, value]) => (
+                <div
+                  key={label}
+                  className="flex justify-between gap-4 border-b pb-2"
+                >
+                  <span className="font-semibold">{label}:</span>
+                  <span className="text-right">{value}</span>
+                </div>
+              ))}
 
               <div className="flex justify-end pt-4">
                 <button

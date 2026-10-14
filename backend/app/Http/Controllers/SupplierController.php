@@ -3,15 +3,14 @@
 namespace App\Http\Controllers;
 
 use App\Models\Supplier;
+use App\Models\AuditLog;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class SupplierController extends Controller
 {
     /**
      * Display a list of all suppliers.
-     *
-     * This is used by the Admin Supplier Management page
-     * to load supplier data from the database.
      */
     public function index()
     {
@@ -21,9 +20,7 @@ class SupplierController extends Controller
     }
 
     /**
-     * Store a newly created supplier.
-     *
-     * This is used when Admin creates a new supplier.
+     * Store a newly created supplier and record the audit log.
      */
     public function store(Request $request)
     {
@@ -39,8 +36,24 @@ class SupplierController extends Controller
             'is_active' => 'nullable|boolean',
         ]);
 
-        // Create the supplier using the validated data.
-        $supplier = Supplier::create($validated);
+        // Create the supplier and audit log in one transaction.
+        $supplier = DB::transaction(function () use (
+            $request,
+            $validated
+        ) {
+            $supplier = Supplier::create($validated);
+
+            // Record the new supplier information.
+            $this->recordAuditLog(
+                $request,
+                'CREATE',
+                $supplier->supplier_id,
+                null,
+                $this->getSupplierAuditValues($supplier)
+            );
+
+            return $supplier;
+        });
 
         return response()->json([
             'message' => 'Supplier created successfully.',
@@ -50,9 +63,6 @@ class SupplierController extends Controller
 
     /**
      * Display one specific supplier.
-     *
-     * This can be used when Admin wants to view
-     * detailed information about a supplier.
      */
     public function show(Supplier $supplier)
     {
@@ -60,9 +70,7 @@ class SupplierController extends Controller
     }
 
     /**
-     * Update an existing supplier.
-     *
-     * This is used when Admin edits supplier information.
+     * Update an existing supplier and record the changes.
      */
     public function update(Request $request, Supplier $supplier)
     {
@@ -78,35 +86,128 @@ class SupplierController extends Controller
             'is_active' => 'nullable|boolean',
         ]);
 
-        // Update the supplier.
-        $supplier->update($validated);
+        // Capture the old values before updating the supplier.
+        $oldValues = $this->getSupplierAuditValues($supplier);
+
+        // Update the supplier and audit log atomically.
+        $updatedSupplier = DB::transaction(function () use (
+            $request,
+            $supplier,
+            $validated,
+            $oldValues
+        ) {
+            $supplier->update($validated);
+            $supplier->refresh();
+
+            // Save the old and new supplier information.
+            $this->recordAuditLog(
+                $request,
+                'UPDATE',
+                $supplier->supplier_id,
+                $oldValues,
+                $this->getSupplierAuditValues($supplier)
+            );
+
+            return $supplier;
+        });
 
         return response()->json([
             'message' => 'Supplier updated successfully.',
-            'supplier' => $supplier->fresh(),
+            'supplier' => $updatedSupplier,
         ]);
     }
 
     /**
-     * Remove a supplier.
-     *
-     * Before using this method in production,
-     * we should check whether the supplier is already
-     * connected to purchase orders.
+     * Remove a supplier and record the deletion.
      */
-    public function destroy(Supplier $supplier)
+    public function destroy(Request $request, Supplier $supplier)
     {
-        // Prevent deleting a supplier that already has purchase orders.
+        // Preserve the existing rule that protects suppliers
+        // associated with purchase orders.
         if ($supplier->purchaseOrders()->exists()) {
             return response()->json([
                 'message' => 'This supplier cannot be deleted because it has purchase orders.',
             ], 409);
         }
 
-        $supplier->delete();
+        // Capture supplier information before deleting it.
+        $oldValues = $this->getSupplierAuditValues($supplier);
+
+        // Delete the supplier and save its audit log together.
+        DB::transaction(function () use (
+            $request,
+            $supplier,
+            $oldValues
+        ) {
+            $this->recordAuditLog(
+                $request,
+                'DELETE',
+                $supplier->supplier_id,
+                $oldValues,
+                null
+            );
+
+            $supplier->delete();
+        });
 
         return response()->json([
             'message' => 'Supplier deleted successfully.',
+        ]);
+    }
+
+    /**
+     * Prepare supplier fields for audit logging.
+     * Store the important supplier information before and after changes.
+     */
+    private function getSupplierAuditValues(Supplier $supplier): array
+    {
+        return [
+            'supplier_name' => $supplier->supplier_name,
+            'contact_person' => $supplier->contact_person,
+            'phone' => $supplier->phone,
+            'email' => $supplier->email,
+            'address' => $supplier->address,
+            'tax_id' => $supplier->tax_id,
+            'payment_terms' => $supplier->payment_terms,
+            'is_active' => $supplier->is_active,
+        ];
+    }
+
+    /**
+     * Insert an activity record into the audit_logs table.
+     */
+    private function recordAuditLog(
+        Request $request,
+        string $action,
+        $entityId,
+        ?array $oldValues = null,
+        ?array $newValues = null
+    ): void {
+        AuditLog::create([
+            // Identify the authenticated user performing the action.
+            'user_id' => $request->user()?->user_id,
+
+            'action' => $action,
+            'entity_type' => 'Supplier',
+            'entity_id' => $entityId,
+
+            // Store old and new values as JSON strings.
+            'old_value' => $oldValues === null
+                ? null
+                : json_encode(
+                    $oldValues,
+                    JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+                ),
+
+            'new_value' => $newValues === null
+                ? null
+                : json_encode(
+                    $newValues,
+                    JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+                ),
+
+            // Record the IP address of the request.
+            'ip_address' => $request->ip(),
         ]);
     }
 }

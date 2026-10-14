@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   LineChart,
@@ -28,220 +28,146 @@ import {
   Loader2,
 } from "lucide-react";
 
-import { Panel, StatusBadge, StatCard } from "../components/ui";
+import { Panel, StatCard } from "../components/ui";
+import api from "../api/axios";
 import pumpImage from "../image/pump.jpg";
 
-// =========================
-// Daily Revenue
-// =========================
-const dailyRevenue = [
-  { day: "Sun", value: 620 },
-  { day: "Mon", value: 540 },
-  { day: "Tue", value: 780 },
-  { day: "Wed", value: 700 },
-  { day: "Thu", value: 900 },
-  { day: "Fri", value: 640 },
-  { day: "Sat", value: 860 },
+// ======================================================
+// Constants
+// ======================================================
+
+const CHART_COLORS = [
+  "#0ea5e9",
+  "#22c55e",
+  "#f59e0b",
+  "#6366f1",
+  "#ec4899",
+  "#14b8a6",
 ];
 
-// =========================
-// Fuel Tanks
-// =========================
-const tankLevels = [
-  { pump: "PumpA", pct: 78, status: "High" },
-  { pump: "PumpB", pct: 25, status: "Low Stock" },
-  { pump: "PumpC", pct: 60, status: "High" },
-  { pump: "PumpD", pct: 20, status: "Low Stock" },
-];
+const EMPTY_PRICE = {
+  fuelId: "",
+  price: "",
+};
 
-// =========================
-// Fuel Sales
-// =========================
-const salesByType = [
-  { name: "Super", value: 38, color: "#0ea5e9" },
-  { name: "Normal", value: 24, color: "#22c55e" },
-  { name: "LPG", value: 16, color: "#f59e0b" },
-  { name: "Diesel", value: 22, color: "#6366f1" },
-];
+const EMPTY_PO = {
+  supplierId: "",
+  fuelId: "",
+  quantity: "",
+  unitPrice: "",
+  orderDate: new Date().toISOString().slice(0, 10),
+  notes: "",
+};
 
-// =========================
-// Low Fuel Alerts
-// =========================
-const lowFuelAlerts = [
-  {
-    tank: "Tank A - Super 95",
-    note: "Only 10% remaining (Low)",
-    status: "Critical Stock",
-  },
-  {
-    tank: "Tank B - Diesel",
-    note: "Only 25% remaining (Low)",
-    status: "Low Stock",
-  },
-  {
-    tank: "Tank D - Normal 92",
-    note: "Only 28% remaining (Low)",
-    status: "Low Stock",
-  },
-  {
-    tank: "Tank C - LPG",
-    note: "Status: Good (80%)",
-    status: "In Stock",
-  },
-];
+// ======================================================
+// Helpers
+// ======================================================
 
-// =========================
-// Maintenance Schedule
-// =========================
-const maintenanceRows = [
-  {
-    equipment: "Pump A1 Nozzle",
-    task: "Nozzle inspection",
-    scheduled: "2026-08-15",
-    time: "09:00 AM",
-    status: "Scheduled",
-    dot: "bg-amber-500",
-  },
-  {
-    equipment: "Tank B Sensor",
-    task: "Sensor inspection",
-    scheduled: "2026-08-18",
-    time: "10:30 AM",
-    status: "Completed",
-    dot: "bg-emerald-500",
-  },
-  {
-    equipment: "Pump C2 Meter",
-    task: "Meter maintenance",
-    scheduled: "2026-08-20",
-    time: "02:00 PM",
-    status: "Maintenance (offline)",
-    dot: "bg-rose-500",
-  },
-];
+// Support API responses returned as arrays or { success, data }.
+function getArray(response) {
+  const body = response?.data;
 
-// =========================
-// Recent Activity
-// =========================
-const recentActivity = [
-  {
-    txn: "372122086",
-    pump: "Pump A",
-    fuel: "Super",
-    amount: "2,555,100 KHR",
-    time: "10:15 AM",
-  },
-  {
-    txn: "372122085",
-    pump: "Pump D",
-    fuel: "Diesel",
-    amount: "1,802,300 KHR",
-    time: "10:12 AM",
-  },
-  {
-    txn: "372122084",
-    pump: "Pump B",
-    fuel: "Diesel",
-    amount: "1,280,200 KHR",
-    time: "09:58 AM",
-  },
-];
+  if (Array.isArray(body)) return body;
+  if (Array.isArray(body?.data)) return body.data;
+  if (Array.isArray(body?.data?.data)) return body.data.data;
 
-// =========================
-// Pump Activity
-// =========================
-const pumpFeed = [
-  {
-    pump: "Pump A",
-    fuelType: "Nozzle 1 Active",
-    amount: "25.5 L, 114,750 KHR",
-    note: "(Dynamic counting up effect)",
-    active: true,
-  },
-  {
-    pump: "Pump B",
-    fuelType: "Nozzle 1 Active",
-    amount: "100.2 L, 450,900 KHR",
-    note: "(Dynamic counting up effect)",
-    active: true,
-  },
-  {
-    pump: "Pump C",
-    fuelType: "Regular 92 Idle",
-    amount: "Last Tx: 52,000 KHR",
-    note: "",
-    active: false,
-  },
-  {
-    pump: "Pump D",
-    fuelType: "Diesel",
-    amount: "Maintenance (offline)",
-    note: "",
-    active: false,
-  },
-];
+  return [];
+}
 
-// =========================
-// Quick Actions
-// =========================
-const quickActions = [
-  {
-    label: "Adjust Price",
-    icon: DollarSign,
-    primary: true,
-  },
-  {
-    label: "Issue PO",
-    icon: FileText,
-    primary: false,
-  },
-  {
-    label: "System Backup",
-    icon: DatabaseBackup,
-    primary: false,
-  },
-];
+// Format numbers using Khmer Riel.
+function formatKHR(value) {
+  return `${Number(value || 0).toLocaleString("en-US", {
+    maximumFractionDigits: 2,
+  })} KHR`;
+}
 
-// =========================
-// Pie Chart Label
-// =========================
-function renderPieLabel({
-  cx,
-  cy,
-  midAngle,
-  innerRadius,
-  outerRadius,
-  value,
-}) {
-  const RADIAN = Math.PI / 180;
+// Format a number with units.
+function formatNumber(value, digits = 2) {
+  return Number(value || 0).toLocaleString("en-US", {
+    maximumFractionDigits: digits,
+  });
+}
 
-  const radius =
-    innerRadius + (outerRadius - innerRadius) / 2;
+// Safely format a date.
+function formatDate(value) {
+  if (!value) return "—";
 
-  const x =
-    cx + radius * Math.cos(-midAngle * RADIAN);
+  const date = new Date(value);
 
-  const y =
-    cy + radius * Math.sin(-midAngle * RADIAN);
+  if (Number.isNaN(date.getTime())) {
+    return String(value).slice(0, 10);
+  }
+
+  return date.toLocaleDateString("en-CA");
+}
+
+// Safely format date and time.
+function formatTime(value) {
+  if (!value) return "—";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return "—";
+
+  return date.toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+// Read a useful error message from Laravel validation responses.
+function getErrorMessage(error) {
+  const response = error?.response?.data;
+
+  if (response?.errors) {
+    const firstError = Object.values(response.errors).flat()[0];
+
+    if (firstError) return firstError;
+  }
 
   return (
-    <text
-      x={x}
-      y={y}
-      fill="#ffffff"
-      textAnchor="middle"
-      dominantBaseline="central"
-      fontSize={15}
-      fontWeight={600}
-    >
-      {`${value}%`}
-    </text>
+    response?.message ||
+    error?.message ||
+    "Something went wrong. Please try again."
   );
 }
 
-// =========================
+// Convert database maintenance statuses into display labels.
+function maintenanceStatusLabel(status) {
+  const labels = {
+    scheduled: "Scheduled",
+    in_progress: "In Progress",
+    completed: "Completed",
+    cancelled: "Cancelled",
+  };
+
+  return labels[status] || status || "Unknown";
+}
+
+// Convert display status into the database enum value.
+function maintenanceStatusValue(status) {
+  const values = {
+    Scheduled: "scheduled",
+    "In Progress": "in_progress",
+    Completed: "completed",
+    Cancelled: "cancelled",
+  };
+
+  return values[status] || status;
+}
+
+// Create a readable equipment label.
+function getEquipmentLabel(record) {
+  const type = record?.equipment_type || "Equipment";
+  const id = record?.equipment_id ?? "";
+
+  return `${type.replaceAll("_", " ")} ${id}`.trim();
+}
+
+// ======================================================
 // Alert Theme
-// =========================
+// ======================================================
+
 const ALERT_THEME = {
   "Critical Stock": {
     row: "bg-rose-50",
@@ -265,14 +191,12 @@ const ALERT_THEME = {
   },
 };
 
-// =========================
+// ======================================================
 // Fuel Alert Row
-// =========================
-function FuelAlertRow({ tank, note, status }) {
-  const theme =
-    ALERT_THEME[status] ??
-    ALERT_THEME["Low Stock"];
+// ======================================================
 
+function FuelAlertRow({ tank, note, status }) {
+  const theme = ALERT_THEME[status] || ALERT_THEME["Low Stock"];
   const Icon = theme.Icon;
 
   return (
@@ -305,125 +229,683 @@ function FuelAlertRow({ tank, note, status }) {
   );
 }
 
-// =========================
+// ======================================================
+// Tank Battery
+// ======================================================
+
+function TankBattery({ pump, pct, status }) {
+  const isHigh = status === "In Stock";
+
+  const theme = isHigh
+    ? {
+        pill: "bg-emerald-50 text-emerald-600",
+        from: "#34d399",
+        to: "#059669",
+      }
+    : {
+        pill: "bg-rose-50 text-rose-500",
+        from: "#fb7185",
+        to: "#e11d48",
+      };
+
+  return (
+    <div className="flex flex-col items-center gap-1.5">
+      <span
+        className={`rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-wide ${theme.pill}`}
+      >
+        {status}
+      </span>
+
+      <div className="h-1 w-4 rounded-t-sm bg-slate-300" />
+
+      <div className="relative h-24 w-14 overflow-hidden rounded-md border-2 border-slate-200 bg-slate-50">
+        <div
+          className="absolute bottom-0 left-0 w-full rounded-b-sm transition-all duration-500"
+          style={{
+            height: `${Math.min(100, Math.max(0, pct))}%`,
+            background: `linear-gradient(180deg, ${theme.from}, ${theme.to})`,
+          }}
+        />
+
+        <div className="absolute inset-0 flex items-center justify-center">
+          <span
+            className="text-[10px] font-bold drop-shadow-sm"
+            style={{
+              color: pct > 45 ? "#ffffff" : "#334155",
+            }}
+          >
+            {formatNumber(pct, 1)}%
+          </span>
+        </div>
+      </div>
+
+      <div className="max-w-20 text-center text-[11px] font-medium capitalize text-slate-600">
+        {pump}
+      </div>
+    </div>
+  );
+}
+
+// ======================================================
 // Dashboard
-// =========================
+// ======================================================
+
 export default function Dashboard() {
-  // =========================
-  // Modal State
-  // =========================
+  // ----------------------------------------------------
+  // API data
+  // ----------------------------------------------------
+
+  const [fuelTypes, setFuelTypes] = useState([]);
+  const [tanks, setTanks] = useState([]);
+  const [pumps, setPumps] = useState([]);
+  const [suppliers, setSuppliers] = useState([]);
+  const [maintenanceRows, setMaintenanceRows] = useState([]);
+  const [recentActivity, setRecentActivity] = useState([]);
+  const [fuelSales, setFuelSales] = useState([]);
+  const [storeSales, setStoreSales] = useState([]);
+  const [employees, setEmployees] = useState([]);
+
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+
+  // ----------------------------------------------------
+  // Modal state
+  // ----------------------------------------------------
+
   const [modal, setModal] = useState(null);
 
-  // =========================
-  // Adjust Price
-  // =========================
-  const [priceData, setPriceData] = useState({
-    fuelType: "Super 95",
-    price: "",
-  });
+  const [priceData, setPriceData] = useState(EMPTY_PRICE);
+  const [poData, setPoData] = useState(EMPTY_PO);
+  const [maintenanceData, setMaintenanceData] = useState(null);
 
-  // =========================
-  // Purchase Order
-  // =========================
-  const [poData, setPoData] = useState({
-    supplier: "",
-    fuelType: "Diesel",
-    quantity: "",
-  });
+  const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState("");
+  const [formSuccess, setFormSuccess] = useState("");
 
-  // =========================
-  // Backup
-  // =========================
-  const [backupStatus, setBackupStatus] =
-    useState("idle");
+  // Backup is deliberately not marked successful until a
+  // real backend backup endpoint has been implemented.
+  const [backupStatus, setBackupStatus] = useState("idle");
 
-  // =========================
-  // Maintenance
-  // =========================
-  const [maintenanceData, setMaintenanceData] =
-    useState(null);
+  // ----------------------------------------------------
+  // Load Dashboard data
+  // ----------------------------------------------------
 
-  // =========================
-  // Open Modal
-  // =========================
+  const loadDashboard = useCallback(async () => {
+    setLoading(true);
+    setLoadError("");
+
+    // Each request is independent so one unavailable
+    // endpoint does not prevent the other panels loading.
+    const requests = [
+      ["fuelTypes", () => api.get("/fuel-types")],
+      ["tanks", () => api.get("/fuel-tanks")],
+      ["pumps", () => api.get("/fuel-pumps")],
+      ["suppliers", () => api.get("/suppliers")],
+      ["maintenance", () => api.get("/equipment-maintenance")],
+      ["activity", () => api.get("/activity-logs")],
+      ["fuelSales", () => api.get("/fuel-sales")],
+      ["storeSales", () => api.get("/store-sales")],
+      ["employees", () => api.get("/employees")],
+    ];
+
+    const results = await Promise.allSettled(
+      requests.map(([, request]) => request())
+    );
+
+    const failedRequests = [];
+
+    results.forEach((result, index) => {
+      const key = requests[index][0];
+
+      if (result.status === "rejected") {
+        failedRequests.push(key);
+        return;
+      }
+
+      const response = result.value;
+
+      switch (key) {
+        case "fuelTypes":
+          setFuelTypes(getArray(response));
+          break;
+
+        case "tanks":
+          setTanks(getArray(response));
+          break;
+
+        case "pumps":
+          setPumps(getArray(response));
+          break;
+
+        case "suppliers":
+          setSuppliers(
+            getArray(response).filter(
+              (supplier) => supplier.is_active !== false
+            )
+          );
+          break;
+
+        case "maintenance":
+          setMaintenanceRows(getArray(response));
+          break;
+
+        case "activity": {
+          const body = response.data;
+
+          setRecentActivity(
+            Array.isArray(body?.data)
+              ? body.data
+              : Array.isArray(body)
+                ? body
+                : []
+          );
+          break;
+        }
+
+        case "fuelSales":
+          setFuelSales(getArray(response));
+          break;
+
+        case "storeSales":
+          setStoreSales(getArray(response));
+          break;
+
+        case "employees":
+          setEmployees(getArray(response));
+          break;
+
+        default:
+          break;
+      }
+    });
+
+    if (failedRequests.length > 0) {
+      setLoadError(
+        `Some Dashboard data could not be loaded: ${failedRequests.join(", ")}. Check your Laravel routes, login token, and server.`
+      );
+    }
+
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    loadDashboard();
+  }, [loadDashboard]);
+
+  // ----------------------------------------------------
+  // General modal helpers
+  // ----------------------------------------------------
+
   const openModal = (type) => {
+    setFormError("");
+    setFormSuccess("");
     setModal(type);
   };
 
-  // =========================
-  // Close Modal
-  // =========================
   const closeModal = () => {
+    if (submitting) return;
+
     setModal(null);
-    setBackupStatus("idle");
+    setFormError("");
+    setFormSuccess("");
     setMaintenanceData(null);
+    setBackupStatus("idle");
   };
 
-  // =========================
-  // Adjust Price Process
-  // =========================
-  const handleAdjustPrice = (e) => {
-    e.preventDefault();
+  // ----------------------------------------------------
+  // Calculated tank levels
+  // ----------------------------------------------------
 
-    console.log(
-      "Price Updated:",
-      priceData
+  const tankLevels = useMemo(() => {
+    return tanks.map((tank) => {
+      const capacity = Number(tank.capacity || 0);
+      const currentVolume = Number(tank.current_volume || 0);
+
+      const pct =
+        capacity > 0
+          ? Math.min(100, Math.max(0, (currentVolume / capacity) * 100))
+          : 0;
+
+      const isLow =
+        currentVolume <= Number(tank.min_volume || 0);
+
+      const fuel = fuelTypes.find(
+        (item) => Number(item.fuel_id) === Number(tank.fuel_id)
+      );
+
+      return {
+        id: tank.tank_id,
+        pump: tank.tank_number || `Tank ${tank.tank_id}`,
+        pct,
+        status: isLow ? "Low Stock" : "In Stock",
+        fuelName: fuel?.fuel_name || "Unknown fuel",
+        currentVolume,
+        capacity,
+        minVolume: Number(tank.min_volume || 0),
+        tankStatus: tank.status,
+      };
+    });
+  }, [tanks, fuelTypes]);
+
+  // ----------------------------------------------------
+  // Low fuel alerts
+  // ----------------------------------------------------
+
+  const lowFuelAlerts = useMemo(() => {
+    return tankLevels
+      .filter(
+        (tank) =>
+          tank.currentVolume <= tank.minVolume &&
+          tank.tankStatus !== "inactive"
+      )
+      .map((tank) => ({
+        tank: `${tank.pump} - ${tank.fuelName}`,
+        note: `${formatNumber(tank.currentVolume)} L remaining of ${formatNumber(tank.capacity)} L capacity`,
+        status:
+          tank.capacity > 0 &&
+          tank.currentVolume / tank.capacity <= 0.1
+            ? "Critical Stock"
+            : "Low Stock",
+      }));
+  }, [tankLevels]);
+
+  // ----------------------------------------------------
+  // Fuel sales by type
+  //
+  // Note: fuel-sales endpoint is paginated. This chart
+  // represents returned rows, not all-time totals.
+  // ----------------------------------------------------
+
+  const salesByType = useMemo(() => {
+    const totals = new Map();
+
+    fuelSales
+      .filter((sale) => sale.payment_status === "paid")
+      .forEach((sale) => {
+        const fuelId = Number(sale.fuel_id);
+        const amount = Number(sale.quantity || 0);
+
+        totals.set(
+          fuelId,
+          (totals.get(fuelId) || 0) + amount
+        );
+      });
+
+    const entries = fuelTypes.map((fuel, index) => ({
+      name: fuel.fuel_name,
+      value: totals.get(Number(fuel.fuel_id)) || 0,
+      color: CHART_COLORS[index % CHART_COLORS.length],
+    }));
+
+    const grandTotal = entries.reduce(
+      (sum, entry) => sum + entry.value,
+      0
     );
 
-    alert(
-      `${priceData.fuelType} price has been updated to ${priceData.price} KHR/L`
+    return entries.map((entry) => ({
+      ...entry,
+      percent:
+        grandTotal > 0
+          ? (entry.value / grandTotal) * 100
+          : 0,
+    }));
+  }, [fuelSales, fuelTypes]);
+
+  // ----------------------------------------------------
+  // Pump activity
+  //
+  // Uses real pump status and latest returned sale.
+  // It does not simulate a live counting meter.
+  // ----------------------------------------------------
+
+  const pumpFeed = useMemo(() => {
+    return pumps.map((pump) => {
+      const latestSale = fuelSales.find(
+        (sale) => Number(sale.pump_id) === Number(pump.pump_id)
+      );
+
+      const fuel = fuelTypes.find(
+        (item) => Number(item.fuel_id) === Number(pump.fuel_id)
+      );
+
+      const statusLabels = {
+        available: "Available",
+        in_use: "In Use",
+        under_maintenance: "Under Maintenance",
+        out_of_service: "Out of Service",
+      };
+
+      let amount = "No recent sale found";
+
+      if (latestSale) {
+        amount = `${formatNumber(latestSale.quantity)} L, ${formatKHR(latestSale.total_amount)}`;
+      } else if (pump.meter_reading != null) {
+        amount = `Meter reading: ${formatNumber(pump.meter_reading)}`;
+      }
+
+      return {
+        id: pump.pump_id,
+        pump: pump.pump_number || `Pump ${pump.pump_id}`,
+        fuelType: fuel?.fuel_name || "Unknown fuel",
+        status: statusLabels[pump.status] || pump.status || "Unknown",
+        amount,
+        active: pump.status === "in_use",
+      };
+    });
+  }, [pumps, fuelSales, fuelTypes]);
+
+  // ----------------------------------------------------
+  // Dashboard stats
+  // ----------------------------------------------------
+
+  const totalPumps = pumps.length;
+
+  const activePumps = pumps.filter(
+    (pump) => pump.status === "in_use"
+  ).length;
+
+  const employeeCount = employees.length;
+
+  // Sales endpoints paginate results. These figures are
+  // explicitly based on the returned records only.
+  const today = new Date().toDateString();
+
+  const todayFuelSales = fuelSales.filter((sale) => {
+    return (
+      sale.sale_date &&
+      new Date(sale.sale_date).toDateString() === today &&
+      sale.payment_status === "paid"
+    );
+  });
+
+  const todayFuelLiters = todayFuelSales.reduce(
+    (sum, sale) => sum + Number(sale.quantity || 0),
+    0
+  );
+
+  // Do not call this monthly revenue: the existing API
+  // does not return a complete month-level aggregate.
+  const visibleSalesRevenue = [...fuelSales, ...storeSales]
+    .filter((sale) => sale.payment_status === "paid")
+    .reduce(
+      (sum, sale) => sum + Number(sale.total_amount || 0),
+      0
     );
 
-    closeModal();
+  // ----------------------------------------------------
+  // Revenue chart
+  //
+  // This chart groups returned paid fuel-sale records
+  // into weekdays. It is not a complete daily aggregate
+  // until a dedicated report endpoint is added.
+  // ----------------------------------------------------
+
+  const dailyRevenue = useMemo(() => {
+    const days = [];
+
+    for (let i = 6; i >= 0; i--) {
+      const date = new Date();
+      date.setHours(0, 0, 0, 0);
+      date.setDate(date.getDate() - i);
+
+      const label = date.toLocaleDateString("en-US", {
+        weekday: "short",
+      });
+
+      const value = fuelSales
+        .filter((sale) => {
+          if (!sale.sale_date || sale.payment_status !== "paid") {
+            return false;
+          }
+
+          const saleDate = new Date(sale.sale_date);
+          return saleDate.toDateString() === date.toDateString();
+        })
+        .reduce(
+          (sum, sale) => sum + Number(sale.total_amount || 0),
+          0
+        );
+
+      days.push({
+        day: label,
+        value,
+      });
+    }
+
+    return days;
+  }, [fuelSales]);
+
+  // ----------------------------------------------------
+  // Adjust fuel price
+  // ----------------------------------------------------
+
+  const handleAdjustPrice = async (event) => {
+    event.preventDefault();
+
+    setSubmitting(true);
+    setFormError("");
+    setFormSuccess("");
+
+    try {
+      if (!priceData.fuelId) {
+        throw new Error("Please select a fuel type.");
+      }
+
+      const price = Number(priceData.price);
+
+      if (!Number.isFinite(price) || price < 0) {
+        throw new Error("Please enter a valid fuel price.");
+      }
+
+      const response = await api.put(
+        `/fuel-types/${priceData.fuelId}`,
+        {
+          selling_price: price,
+        }
+      );
+
+      setFormSuccess(
+        response.data?.message || "Fuel price updated successfully."
+      );
+
+      await loadDashboard();
+
+      setPriceData(EMPTY_PRICE);
+    } catch (error) {
+      setFormError(getErrorMessage(error));
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  // =========================
-  // Create PO Process
-  // =========================
-  const handleCreatePO = (e) => {
-    e.preventDefault();
+  // ----------------------------------------------------
+  // Create purchase order
+  // ----------------------------------------------------
 
-    console.log(
-      "Purchase Order:",
-      poData
-    );
+  const handleCreatePO = async (event) => {
+    event.preventDefault();
 
-    alert(
-      `Purchase Order created successfully for ${poData.quantity} L of ${poData.fuelType}`
-    );
+    setSubmitting(true);
+    setFormError("");
+    setFormSuccess("");
 
-    closeModal();
+    try {
+      if (!poData.supplierId || !poData.fuelId) {
+        throw new Error("Please select a supplier and fuel type.");
+      }
+
+      const quantity = Number(poData.quantity);
+      const unitPrice = Number(poData.unitPrice);
+
+      if (!Number.isFinite(quantity) || quantity <= 0) {
+        throw new Error("Quantity must be greater than zero.");
+      }
+
+      if (!Number.isFinite(unitPrice) || unitPrice < 0) {
+        throw new Error("Please enter a valid purchase price.");
+      }
+
+      // Use a timestamp-based reference. The backend still
+      // validates uniqueness and reports any conflict.
+      const poNumber = `PO-${Date.now()}`;
+
+      const response = await api.post("/purchase-orders", {
+        po_number: poNumber,
+        supplier_id: Number(poData.supplierId),
+        fuel_id: Number(poData.fuelId),
+        quantity,
+        unit_price: unitPrice,
+        order_date: poData.orderDate,
+        notes: poData.notes || null,
+        status: "pending",
+      });
+
+      setFormSuccess(
+        response.data?.message || "Purchase order created successfully."
+      );
+
+      await loadDashboard();
+
+      setPoData(EMPTY_PO);
+    } catch (error) {
+      setFormError(getErrorMessage(error));
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  // =========================
-  // Backup Process
-  // =========================
+  // ----------------------------------------------------
+  // System backup
+  //
+  // No backup endpoint was included in the supplied
+  // backend code. Do not simulate successful completion.
+  // ----------------------------------------------------
+
   const handleBackup = () => {
-    setBackupStatus("processing");
-
-    setTimeout(() => {
-      setBackupStatus("completed");
-    }, 2000);
+    setBackupStatus("unavailable");
   };
 
-  // =========================
-  // Maintenance Detail
-  // =========================
+  // ----------------------------------------------------
+  // Maintenance details
+  // ----------------------------------------------------
+
   const openMaintenanceDetail = (maintenance) => {
-    setMaintenanceData(maintenance);
+    setMaintenanceData({
+      ...maintenance,
+      status: maintenance.status || "scheduled",
+    });
+
+    setFormError("");
+    setFormSuccess("");
     setModal("maintenance");
   };
+
+  const handleUpdateMaintenance = async () => {
+    if (!maintenanceData?.maintenance_id) {
+      setFormError("Maintenance record ID is missing.");
+      return;
+    }
+
+    setSubmitting(true);
+    setFormError("");
+    setFormSuccess("");
+
+    try {
+      const status = maintenanceStatusValue(
+        maintenanceData.status
+      );
+
+      const payload = { status };
+
+      // When marked completed, record the performed date
+      // if it has not already been entered.
+      if (
+        status === "completed" &&
+        !maintenanceData.performed_date
+      ) {
+        payload.performed_date = new Date()
+          .toISOString()
+          .slice(0, 10);
+      }
+
+      const response = await api.put(
+        `/equipment-maintenance/${maintenanceData.maintenance_id}`,
+        payload
+      );
+
+      setFormSuccess(
+        response.data?.message ||
+          "Maintenance record updated successfully."
+      );
+
+      await loadDashboard();
+    } catch (error) {
+      setFormError(getErrorMessage(error));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // ----------------------------------------------------
+  // Shared status message
+  // ----------------------------------------------------
+
+  const StatusMessage = ({ error, success }) => (
+    <>
+      {error && (
+        <div
+          role="alert"
+          className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700"
+        >
+          {error}
+        </div>
+      )}
+
+      {success && (
+        <div
+          role="status"
+          className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700"
+        >
+          {success}
+        </div>
+      )}
+    </>
+  );
+
+  // ======================================================
+  // Render
+  // ======================================================
 
   return (
     <>
       <div className="space-y-4 bg-gray-400 p-6">
+        {/* Dashboard loading / API errors */}
+
+        {loadError && (
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <span>{loadError}</span>
+
+            <button
+              onClick={loadDashboard}
+              className="shrink-0 rounded-lg border border-amber-300 px-3 py-1.5 font-medium hover:bg-amber-100"
+            >
+              Retry
+            </button>
+          </div>
+        )}
+
+        {loading && (
+          <div className="flex items-center gap-2 rounded-lg bg-white/80 px-4 py-3 text-sm text-slate-600">
+            <Loader2 size={18} className="animate-spin" />
+            Loading Dashboard data...
+          </div>
+        )}
 
         {/* ===================================== */}
         {/* STAT CARDS */}
         {/* ===================================== */}
 
         <div className="grid grid-cols-4 gap-4">
-
           <StatCard
             icon={
               <img
@@ -433,8 +915,8 @@ export default function Dashboard() {
               />
             }
             label="Total Fuel Sales Today"
-            value="12,450 L"
-            delta="Change vs Yesterday: +50 L"
+            value={`${formatNumber(todayFuelLiters)} L`}
+            delta="Based on returned paid fuel-sale records"
           />
 
           <StatCard
@@ -444,9 +926,9 @@ export default function Dashboard() {
                 className="h-10 w-10 text-emerald-500"
               />
             }
-            label="Monthly Revenue"
-            value="35,450,000 KHR"
-            delta="Change vs Yesterday: +80,000 KHR"
+            label="Revenue in Loaded Sales"
+            value={formatKHR(visibleSalesRevenue)}
+            delta="Loaded records only — not the monthly total"
           />
 
           <StatCard
@@ -457,8 +939,8 @@ export default function Dashboard() {
               />
             }
             label="Total Pumps"
-            value="3/4"
-            delta="Total Pumps: 4"
+            value={`${activePumps}/${totalPumps}`}
+            delta="Pumps currently marked In Use"
             deltaTone="neutral"
           />
 
@@ -470,11 +952,10 @@ export default function Dashboard() {
               />
             }
             label="Employees"
-            value="1"
-            delta="Employees: 1"
+            value={loading ? "..." : String(employeeCount)}
+            delta="Employees returned by the API"
             deltaTone="neutral"
           />
-
         </div>
 
         {/* ===================================== */}
@@ -482,42 +963,35 @@ export default function Dashboard() {
         {/* ===================================== */}
 
         <div className="grid grid-cols-3 gap-4">
-
           {/* Daily Revenue */}
-          <Panel
-            title="Daily Revenue"
-            className="col-span-1"
-          >
-            <ResponsiveContainer
-              width="100%"
-              height={180}
-            >
+
+          <Panel title="Daily Revenue" className="col-span-1">
+            <ResponsiveContainer width="100%" height={180}>
               <LineChart data={dailyRevenue}>
                 <CartesianGrid
-                  strokeDasharray=""
+                  strokeDasharray="3 3"
                   stroke="oklch(70.5% 0.015 286.067)"
                 />
 
                 <XAxis
                   dataKey="day"
-                  tick={{
-                    fontSize: 13,
-                    fill: "black",
-                  }}
+                  tick={{ fontSize: 13, fill: "black" }}
                   axisLine={false}
                   tickLine={false}
                 />
 
                 <YAxis
-                  tick={{
-                    fontSize: 13,
-                    fill: "black",
-                  }}
+                  tick={{ fontSize: 11, fill: "black" }}
                   axisLine={false}
                   tickLine={false}
                 />
 
-                <Tooltip />
+                <Tooltip
+                  formatter={(value) => [
+                    formatKHR(value),
+                    "Loaded fuel sales",
+                  ]}
+                />
 
                 <Line
                   type="monotone"
@@ -528,200 +1002,212 @@ export default function Dashboard() {
                 />
               </LineChart>
             </ResponsiveContainer>
+
+            <p className="mt-2 text-xs text-slate-400">
+              Based on returned fuel-sale records. Complete daily totals
+              require a reporting endpoint.
+            </p>
           </Panel>
 
           {/* Fuel Tanks */}
-          <Panel
-            title="Fuel Tanks"
-            className="col-span-1"
-          >
-            <div className="flex h-[200px] items-center justify-around">
-              {tankLevels.map((t) => (
-                <TankBattery
-                  key={t.pump}
-                  {...t}
-                />
-              ))}
-            </div>
+
+          <Panel title="Fuel Tanks" className="col-span-1">
+            {tankLevels.length > 0 ? (
+              <div className="flex min-h-[200px] flex-wrap items-center justify-around gap-4 py-2">
+                {tankLevels.map((tank) => (
+                  <TankBattery
+                    key={tank.id}
+                    pump={tank.pump}
+                    pct={tank.pct}
+                    status={tank.status}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="flex h-[200px] items-center justify-center text-sm text-slate-400">
+                {loading ? "Loading tanks..." : "No tank records found."}
+              </div>
+            )}
           </Panel>
 
           {/* Fuel Sales Chart */}
-          <Panel
-            title="Fuel Sales by Type Chart"
-            className="col-span-1"
-          >
-            <ResponsiveContainer
-              width="100%"
-              height={180}
-            >
-              <PieChart>
-                <Pie
-                  data={salesByType}
-                  dataKey="value"
-                  nameKey="name"
-                  innerRadius={55}
-                  outerRadius={90}
-                  paddingAngle={2}
-                  label={renderPieLabel}
-                  labelLine={false}
+
+          <Panel title="Fuel Sales by Type Chart" className="col-span-1">
+            {salesByType.some((item) => item.value > 0) ? (
+              <>
+                <ResponsiveContainer width="100%" height={180}>
+                  <PieChart>
+                    <Pie
+                      data={salesByType.filter((item) => item.value > 0)}
+                      dataKey="value"
+                      nameKey="name"
+                      innerRadius={55}
+                      outerRadius={90}
+                      paddingAngle={2}
+                      label={({ percent }) =>
+                        `${Math.round(percent * 100)}%`
+                      }
+                      labelLine={false}
+                    >
+                      {salesByType
+                        .filter((item) => item.value > 0)
+                        .map((entry) => (
+                          <Cell
+                            key={entry.name}
+                            fill={entry.color}
+                          />
+                        ))}
+                    </Pie>
+
+                    <Tooltip
+                      formatter={(value, name) => [
+                        `${formatNumber(value)} L`,
+                        name,
+                      ]}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+
+                <div className="mt-2 flex flex-wrap justify-center gap-3 text-xs text-slate-500">
+                  {salesByType
+                    .filter((item) => item.value > 0)
+                    .map((item) => (
+                      <span
+                        key={item.name}
+                        className="flex items-center gap-1"
+                      >
+                        <span
+                          className="h-2 w-2 rounded-full"
+                          style={{ background: item.color }}
+                        />
+
+                        {item.name}
+                      </span>
+                    ))}
+                </div>
+              </>
+            ) : (
+              <div className="flex h-[200px] items-center justify-center text-sm text-slate-400">
+                {loading
+                  ? "Loading fuel sales..."
+                  : "No paid fuel sales found in the returned records."}
+              </div>
+            )}
+          </Panel>
+        </div>
+
+        {/* ===================================== */}
+        {/* QUICK ACTION + PUMP ACTIVITY */}
+        {/* ===================================== */}
+
+        <div className="grid grid-cols-3 gap-4">
+          {/* Quick Action */}
+
+          <Panel title="Quick Action" className="col-span-1">
+            <div className="flex flex-col gap-2">
+              {[
+                {
+                  label: "Adjust Price",
+                  icon: DollarSign,
+                  primary: true,
+                },
+                {
+                  label: "Issue PO",
+                  icon: FileText,
+                  primary: false,
+                },
+                {
+                  label: "System Backup",
+                  icon: DatabaseBackup,
+                  primary: false,
+                },
+              ].map(({ label, icon: Icon, primary }) => (
+                <button
+                  key={label}
+                  onClick={() => openModal(label)}
+                  className={`flex w-full items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium shadow-sm transition-colors ${
+                    primary
+                      ? "bg-cyan-500 text-white hover:bg-cyan-600"
+                      : "border border-cyan-200 bg-white text-cyan-600 hover:bg-cyan-50"
+                  }`}
                 >
-                  {salesByType.map(
-                    (entry) => (
-                      <Cell
-                        key={entry.name}
-                        fill={entry.color}
-                      />
-                    )
-                  )}
-                </Pie>
-
-                <Tooltip
-                  formatter={(value) =>
-                    `${value}%`
-                  }
-                />
-              </PieChart>
-            </ResponsiveContainer>
-
-            <div className="mt-2 flex flex-wrap justify-center gap-3 text-xs text-slate-500">
-              {salesByType.map((s) => (
-                <span
-                  key={s.name}
-                  className="flex items-center gap-1"
-                >
-                  <span
-                    className="h-2 w-2 rounded-full"
-                    style={{
-                      background: s.color,
-                    }}
-                  />
-
-                  {s.name} ({s.value}%)
-                </span>
+                  <Icon size={16} />
+                  {label}
+                </button>
               ))}
             </div>
           </Panel>
 
-        </div>
+          {/* Pump Activity */}
 
-        {/* ===================================== */}
-        {/* QUICK ACTION + LIVE PUMP */}
-        {/* ===================================== */}
-
-        <div className="grid grid-cols-3 gap-4">
-
-          {/* Quick Action */}
-          <Panel
-            title="Quick Action"
-            className="col-span-1"
-          >
-            <div className="flex flex-col gap-2">
-
-              {quickActions.map(
-                ({
-                  label,
-                  icon: Icon,
-                  primary,
-                }) => (
-                  <button
-                    key={label}
-                    onClick={() =>
-                      openModal(label)
-                    }
-                    className={`flex w-full items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium shadow-sm transition-colors ${
-                      primary
-                        ? "bg-cyan-500 text-white hover:bg-cyan-600"
-                        : "border border-cyan-200 bg-white text-cyan-600 hover:bg-cyan-50"
-                    }`}
-                  >
-                    <Icon size={16} />
-                    {label}
-                  </button>
-                )
-              )}
-
-            </div>
-          </Panel>
-
-          {/* Live Pump Activity */}
           <Panel className="col-span-2">
-
             <div className="mb-4 flex items-center gap-2">
-
               <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-800">
-                <Fuel
-                  size={18}
-                  className="text-white"
-                />
+                <Fuel size={18} className="text-white" />
               </div>
 
-              <span className="rounded-full bg-rose-500 px-2 py-0.5 text-[10px] font-bold text-white">
-                LIVE
+              <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-bold text-slate-600">
+                STATUS
               </span>
 
               <h3 className="text-xl font-bold text-slate-800">
-                Live Pump Activity Feed
+                Pump Activity Feed
               </h3>
-
             </div>
 
-            <div className="overflow-hidden rounded-lg">
-
+            <div className="overflow-x-auto rounded-lg">
               <table className="w-full text-left text-xs">
-
                 <thead>
                   <tr className="bg-sky-100 text-slate-700">
+                    <th className="px-3 py-2 font-semibold">Pump</th>
+                    <th className="px-3 py-2 font-semibold">Fuel Type</th>
+                    <th className="px-3 py-2 font-semibold">Status</th>
                     <th className="px-3 py-2 font-semibold">
-                      Pump
-                    </th>
-
-                    <th className="px-3 py-2 font-semibold">
-                      Fuel Type
-                    </th>
-
-                    <th className="px-3 py-2 font-semibold">
-                      Current Amount (KHB)
+                      Latest Returned Record
                     </th>
                   </tr>
                 </thead>
 
                 <tbody>
-
-                  {pumpFeed.map((p) => (
+                  {pumpFeed.map((pump) => (
                     <tr
-                      key={p.pump}
+                      key={pump.id}
                       className={
-                        p.active
-                          ? "bg-emerald-50"
-                          : "bg-sky-50"
+                        pump.active ? "bg-emerald-50" : "bg-sky-50"
                       }
                     >
                       <td className="px-3 py-2 font-semibold text-slate-700">
-                        {p.pump}
+                        {pump.pump}
+                      </td>
+
+                      <td className="px-3 py-2 capitalize text-slate-600">
+                        {pump.fuelType}
                       </td>
 
                       <td className="px-3 py-2 text-slate-600">
-                        {p.fuelType}
+                        {pump.status}
                       </td>
 
                       <td className="px-3 py-2 text-slate-600">
-                        {p.amount}
-
-                        {p.note && (
-                          <div className="text-[10px] text-slate-400">
-                            {p.note}
-                          </div>
-                        )}
+                        {pump.amount}
                       </td>
                     </tr>
                   ))}
 
+                  {!loading && pumpFeed.length === 0 && (
+                    <tr>
+                      <td
+                        colSpan={4}
+                        className="px-3 py-6 text-center text-slate-400"
+                      >
+                        No pump records found.
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
-
             </div>
           </Panel>
-
         </div>
 
         {/* ===================================== */}
@@ -729,206 +1215,175 @@ export default function Dashboard() {
         {/* ===================================== */}
 
         <div className="grid grid-cols-3 gap-4">
-
           {/* Low Fuel Alerts */}
-          <Panel title="Low Fuel Alerts">
 
+          <Panel title="Low Fuel Alerts">
             <ul className="space-y-2">
-              {lowFuelAlerts.map((a) => (
+              {lowFuelAlerts.map((alert) => (
                 <FuelAlertRow
-                  key={a.tank}
-                  {...a}
+                  key={alert.tank}
+                  {...alert}
                 />
               ))}
-            </ul>
 
+              {!loading && lowFuelAlerts.length === 0 && (
+                <li className="rounded-lg bg-emerald-50 px-3 py-4 text-sm text-emerald-700">
+                  No tanks are currently at or below minimum stock.
+                </li>
+              )}
+            </ul>
           </Panel>
 
           {/* Maintenance Schedule */}
-          <Panel>
 
+          <Panel>
             <h3 className="mb-4 text-xl font-bold text-slate-800">
               Maintenance Schedule
             </h3>
 
-            <table className="w-full text-left text-xs">
-
-              <thead>
-                <tr className="text-slate-700">
-
-                  <th className="pb-2 font-semibold">
-                    Equipment/Task
-                  </th>
-
-                  <th className="pb-2 font-semibold">
-                    Status
-                  </th>
-
-                  <th className="pb-2 font-semibold">
-                    Scheduled Date
-                  </th>
-
-                  <th className="pb-2 font-semibold">
-                    Action
-                  </th>
-
-                </tr>
-              </thead>
-
-              <tbody>
-
-                {maintenanceRows.map((m) => (
-                  <tr
-                    key={m.equipment}
-                    className="border-t border-slate-100"
-                  >
-
-                    <td className="py-3 pr-2">
-
-                      <div className="font-medium text-slate-700">
-                        {m.equipment}
-                      </div>
-
-                      <div className="text-slate-400">
-                        {m.task}
-                      </div>
-
-                    </td>
-
-                    <td className="py-3 pr-2">
-
-                      <div className="flex items-center gap-1.5 text-slate-600">
-
-                        <span
-                          className={`h-2 w-2 rounded-full ${m.dot}`}
-                        />
-
-                        {m.status}
-
-                      </div>
-
-                    </td>
-
-                    <td className="py-3 pr-2 text-slate-500">
-
-                      <div>
-                        {m.scheduled}
-                      </div>
-
-                      <div>
-                        {m.time}
-                      </div>
-
-                    </td>
-
-                    <td className="py-3">
-
-                      <button
-                        onClick={() =>
-                          openMaintenanceDetail(m)
-                        }
-                        className="rounded-full bg-slate-800 px-4 py-1.5 text-[11px] font-medium text-white hover:bg-slate-700"
-                      >
-                        Detail
-                      </button>
-
-                    </td>
-
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="text-slate-700">
+                    <th className="pb-2 font-semibold">Equipment/Task</th>
+                    <th className="pb-2 font-semibold">Status</th>
+                    <th className="pb-2 font-semibold">Scheduled Date</th>
+                    <th className="pb-2 font-semibold">Action</th>
                   </tr>
-                ))}
+                </thead>
 
-              </tbody>
+                <tbody>
+                  {maintenanceRows.map((maintenance) => {
+                    const status =
+                      maintenanceStatusLabel(maintenance.status);
 
-            </table>
+                    const dot =
+                      maintenance.status === "completed"
+                        ? "bg-emerald-500"
+                        : maintenance.status === "cancelled"
+                          ? "bg-slate-400"
+                          : maintenance.status === "in_progress"
+                            ? "bg-rose-500"
+                            : "bg-amber-500";
 
+                    return (
+                      <tr
+                        key={maintenance.maintenance_id}
+                        className="border-t border-slate-100"
+                      >
+                        <td className="py-3 pr-2">
+                          <div className="font-medium capitalize text-slate-700">
+                            {getEquipmentLabel(maintenance)}
+                          </div>
+
+                          <div className="text-slate-400">
+                            {maintenance.description ||
+                              maintenance.maintenance_type ||
+                              "Maintenance"}
+                          </div>
+                        </td>
+
+                        <td className="py-3 pr-2">
+                          <div className="flex items-center gap-1.5 text-slate-600">
+                            <span className={`h-2 w-2 rounded-full ${dot}`} />
+                            {status}
+                          </div>
+                        </td>
+
+                        <td className="py-3 pr-2 text-slate-500">
+                          {formatDate(maintenance.scheduled_date)}
+                        </td>
+
+                        <td className="py-3">
+                          <button
+                            onClick={() =>
+                              openMaintenanceDetail(maintenance)
+                            }
+                            className="rounded-full bg-slate-800 px-3 py-1.5 text-[11px] font-medium text-white hover:bg-slate-700"
+                          >
+                            Detail
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+
+                  {!loading && maintenanceRows.length === 0 && (
+                    <tr>
+                      <td
+                        colSpan={4}
+                        className="py-6 text-center text-slate-400"
+                      >
+                        No maintenance records found.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </Panel>
 
           {/* Recent Activity */}
-          <Panel>
 
+          <Panel>
             <h3 className="mb-4 text-xl font-bold text-slate-800">
               My Recent Activity
             </h3>
 
-            <div className="overflow-hidden rounded-lg">
-
+            <div className="overflow-x-auto rounded-lg">
               <table className="w-full text-left text-xs">
-
                 <thead>
-
                   <tr className="bg-sky-100 text-slate-700">
-
-                    <th className="px-3 py-2 font-semibold">
-                      Transaction
-                    </th>
-
-                    <th className="px-3 py-2 font-semibold">
-                      Pump
-                    </th>
-
-                    <th className="px-3 py-2 font-semibold">
-                      Fuel
-                    </th>
-
-                    <th className="px-3 py-2 font-semibold">
-                      Amount
-                    </th>
-
-                    <th className="px-3 py-2 font-semibold">
-                      Time
-                    </th>
-
+                    <th className="px-3 py-2 font-semibold">Action</th>
+                    <th className="px-3 py-2 font-semibold">Entity</th>
+                    <th className="px-3 py-2 font-semibold">User</th>
+                    <th className="px-3 py-2 font-semibold">Time</th>
                   </tr>
-
                 </thead>
 
                 <tbody>
+                  {recentActivity.slice(0, 8).map((activity, index) => (
+                    <tr
+                      key={activity.log_id ?? index}
+                      className={
+                        index % 2 === 0 ? "bg-white" : "bg-sky-50"
+                      }
+                    >
+                      <td className="px-3 py-2 font-medium text-slate-700">
+                        {activity.action || "—"}
+                      </td>
 
-                  {recentActivity.map(
-                    (r, i) => (
-                      <tr
-                        key={r.txn}
-                        className={
-                          i % 2 === 0
-                            ? "bg-white"
-                            : "bg-sky-50"
-                        }
+                      <td className="px-3 py-2 text-slate-600">
+                        {activity.entity_type || "—"}
+                      </td>
+
+                      <td className="px-3 py-2 text-slate-600">
+                        {activity.user?.full_name ||
+                          activity.user?.username ||
+                          "System"}
+                      </td>
+
+                      <td className="px-3 py-2 text-slate-400">
+                        {formatTime(activity.created_at)}
+                      </td>
+                    </tr>
+                  ))}
+
+                  {!loading && recentActivity.length === 0 && (
+                    <tr>
+                      <td
+                        colSpan={4}
+                        className="px-3 py-6 text-center text-slate-400"
                       >
-
-                        <td className="px-3 py-2 text-slate-500">
-                          {r.txn}
-                        </td>
-
-                        <td className="px-3 py-2 font-medium text-slate-700">
-                          {r.pump}
-                        </td>
-
-                        <td className="px-3 py-2 text-slate-600">
-                          {r.fuel}
-                        </td>
-
-                        <td className="px-3 py-2 font-medium text-slate-700">
-                          {r.amount}
-                        </td>
-
-                        <td className="px-3 py-2 text-slate-400">
-                          {r.time}
-                        </td>
-
-                      </tr>
-                    )
+                        No activity records found.
+                      </td>
+                    </tr>
                   )}
-
                 </tbody>
-
               </table>
-
             </div>
-
           </Panel>
-
         </div>
-
       </div>
 
       {/* ====================================================== */}
@@ -937,11 +1392,8 @@ export default function Dashboard() {
 
       {modal === "Adjust Price" && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-
           <div className="w-full max-w-md rounded-xl bg-white shadow-2xl">
-
             <div className="flex items-center justify-between border-b px-6 py-4">
-
               <div>
                 <h2 className="text-lg font-bold text-slate-800">
                   Adjust Fuel Price
@@ -954,55 +1406,63 @@ export default function Dashboard() {
 
               <button
                 onClick={closeModal}
+                disabled={submitting}
                 className="rounded-full p-2 text-slate-500 hover:bg-slate-100"
               >
                 <X size={20} />
               </button>
-
             </div>
 
             <form
               onSubmit={handleAdjustPrice}
               className="space-y-4 p-6"
             >
+              <StatusMessage
+                error={formError}
+                success={formSuccess}
+              />
 
               <div>
-
                 <label className="mb-1 block text-sm font-medium text-slate-700">
                   Fuel Type
                 </label>
 
                 <select
-                  value={priceData.fuelType}
-                  onChange={(e) =>
+                  required
+                  value={priceData.fuelId}
+                  onChange={(event) => {
+                    const fuelId = event.target.value;
+
+                    const selectedFuel = fuelTypes.find(
+                      (fuel) =>
+                        String(fuel.fuel_id) === String(fuelId)
+                    );
+
                     setPriceData({
-                      ...priceData,
-                      fuelType: e.target.value,
-                    })
-                  }
+                      fuelId,
+                      price:
+                        selectedFuel?.selling_price != null
+                          ? String(selectedFuel.selling_price)
+                          : "",
+                    });
+                  }}
                   className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-cyan-500"
                 >
-                  <option>
-                    Super 95
-                  </option>
+                  <option value="">Select Fuel Type</option>
 
-                  <option>
-                    Normal 92
-                  </option>
-
-                  <option>
-                    Diesel
-                  </option>
-
-                  <option>
-                    LPG
-                  </option>
+                  {fuelTypes.map((fuel) => (
+                    <option
+                      key={fuel.fuel_id}
+                      value={fuel.fuel_id}
+                    >
+                      {fuel.fuel_name} — Current:{" "}
+                      {formatNumber(fuel.selling_price)} KHR/L
+                    </option>
+                  ))}
                 </select>
-
               </div>
 
               <div>
-
                 <label className="mb-1 block text-sm font-medium text-slate-700">
                   New Price (KHR/L)
                 </label>
@@ -1010,25 +1470,25 @@ export default function Dashboard() {
                 <input
                   type="number"
                   required
-                  min="1"
+                  min="0"
+                  step="0.01"
                   value={priceData.price}
-                  onChange={(e) =>
+                  onChange={(event) =>
                     setPriceData({
                       ...priceData,
-                      price: e.target.value,
+                      price: event.target.value,
                     })
                   }
                   placeholder="Enter new price"
                   className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-cyan-500"
                 />
-
               </div>
 
               <div className="flex justify-end gap-2 pt-2">
-
                 <button
                   type="button"
                   onClick={closeModal}
+                  disabled={submitting}
                   className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50"
                 >
                   Cancel
@@ -1036,31 +1496,30 @@ export default function Dashboard() {
 
                 <button
                   type="submit"
-                  className="flex items-center gap-2 rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-600"
+                  disabled={submitting || fuelTypes.length === 0}
+                  className="flex items-center gap-2 rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-600 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  <Save size={16} />
+                  {submitting ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : (
+                    <Save size={16} />
+                  )}
                   Save Price
                 </button>
-
               </div>
-
             </form>
-
           </div>
         </div>
       )}
 
       {/* ====================================================== */}
-      {/* ISSUE PO MODAL */}
+      {/* ISSUE PURCHASE ORDER MODAL */}
       {/* ====================================================== */}
 
       {modal === "Issue PO" && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-
           <div className="w-full max-w-lg rounded-xl bg-white shadow-2xl">
-
             <div className="flex items-center justify-between border-b px-6 py-4">
-
               <div>
                 <h2 className="text-lg font-bold text-slate-800">
                   Issue Purchase Order
@@ -1073,128 +1532,205 @@ export default function Dashboard() {
 
               <button
                 onClick={closeModal}
+                disabled={submitting}
                 className="rounded-full p-2 text-slate-500 hover:bg-slate-100"
               >
                 <X size={20} />
               </button>
-
             </div>
 
             <form
               onSubmit={handleCreatePO}
               className="space-y-4 p-6"
             >
+              <StatusMessage
+                error={formError}
+                success={formSuccess}
+              />
 
               {/* Supplier */}
-              <div>
 
+              <div>
                 <label className="mb-1 block text-sm font-medium text-slate-700">
                   Supplier
                 </label>
 
                 <select
                   required
-                  value={poData.supplier}
-                  onChange={(e) =>
+                  value={poData.supplierId}
+                  onChange={(event) =>
                     setPoData({
                       ...poData,
-                      supplier: e.target.value,
+                      supplierId: event.target.value,
                     })
                   }
                   className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-cyan-500"
                 >
+                  <option value="">Select Supplier</option>
 
-                  <option value="">
-                    Select Supplier
-                  </option>
-
-                  <option>
-                    TotalEnergies Supplier
-                  </option>
-
-                  <option>
-                    PTT Supplier
-                  </option>
-
-                  <option>
-                    Caltex Supplier
-                  </option>
-
-                  <option>
-                    Local Fuel Supplier
-                  </option>
-
+                  {suppliers.map((supplier) => (
+                    <option
+                      key={supplier.supplier_id}
+                      value={supplier.supplier_id}
+                    >
+                      {supplier.supplier_name}
+                    </option>
+                  ))}
                 </select>
-
               </div>
 
               {/* Fuel Type */}
-              <div>
 
+              <div>
                 <label className="mb-1 block text-sm font-medium text-slate-700">
                   Fuel Type
                 </label>
 
                 <select
-                  value={poData.fuelType}
-                  onChange={(e) =>
+                  required
+                  value={poData.fuelId}
+                  onChange={(event) => {
+                    const fuelId = event.target.value;
+
+                    const selectedFuel = fuelTypes.find(
+                      (fuel) =>
+                        String(fuel.fuel_id) === String(fuelId)
+                    );
+
                     setPoData({
                       ...poData,
-                      fuelType: e.target.value,
-                    })
-                  }
+                      fuelId,
+                      unitPrice:
+                        selectedFuel?.purchase_price != null
+                          ? String(selectedFuel.purchase_price)
+                          : "",
+                    });
+                  }}
                   className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-cyan-500"
                 >
+                  <option value="">Select Fuel Type</option>
 
-                  <option>
-                    Super 95
-                  </option>
-
-                  <option>
-                    Normal 92
-                  </option>
-
-                  <option>
-                    Diesel
-                  </option>
-
-                  <option>
-                    LPG
-                  </option>
-
+                  {fuelTypes.map((fuel) => (
+                    <option
+                      key={fuel.fuel_id}
+                      value={fuel.fuel_id}
+                    >
+                      {fuel.fuel_name}
+                    </option>
+                  ))}
                 </select>
-
               </div>
 
               {/* Quantity */}
-              <div>
 
+              <div>
                 <label className="mb-1 block text-sm font-medium text-slate-700">
                   Quantity (Liter)
                 </label>
 
                 <input
                   type="number"
-                  min="1"
+                  min="0.001"
+                  step="0.001"
                   required
                   value={poData.quantity}
-                  onChange={(e) =>
+                  onChange={(event) =>
                     setPoData({
                       ...poData,
-                      quantity: e.target.value,
+                      quantity: event.target.value,
                     })
                   }
                   placeholder="Enter quantity"
                   className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-cyan-500"
                 />
+              </div>
 
+              {/* Purchase price */}
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">
+                  Purchase Price (KHR/L)
+                </label>
+
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  required
+                  value={poData.unitPrice}
+                  onChange={(event) =>
+                    setPoData({
+                      ...poData,
+                      unitPrice: event.target.value,
+                    })
+                  }
+                  placeholder="Enter unit purchase price"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-cyan-500"
+                />
+              </div>
+
+              {/* Order date */}
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">
+                  Order Date
+                </label>
+
+                <input
+                  type="date"
+                  required
+                  value={poData.orderDate}
+                  onChange={(event) =>
+                    setPoData({
+                      ...poData,
+                      orderDate: event.target.value,
+                    })
+                  }
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-cyan-500"
+                />
+              </div>
+
+              {/* Optional notes */}
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">
+                  Notes (Optional)
+                </label>
+
+                <textarea
+                  rows={2}
+                  value={poData.notes}
+                  onChange={(event) =>
+                    setPoData({
+                      ...poData,
+                      notes: event.target.value,
+                    })
+                  }
+                  placeholder="Enter additional notes"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-cyan-500"
+                />
+              </div>
+
+              {/* Estimated total */}
+
+              <div className="rounded-lg bg-sky-50 p-3">
+                <div className="text-xs text-slate-500">
+                  Estimated Total Amount
+                </div>
+
+                <div className="mt-1 text-lg font-bold text-slate-800">
+                  {formatKHR(
+                    Number(poData.quantity || 0) *
+                      Number(poData.unitPrice || 0)
+                  )}
+                </div>
               </div>
 
               <div className="flex justify-end gap-2 pt-2">
-
                 <button
                   type="button"
                   onClick={closeModal}
+                  disabled={submitting}
                   className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50"
                 >
                   Cancel
@@ -1202,16 +1738,22 @@ export default function Dashboard() {
 
                 <button
                   type="submit"
-                  className="flex items-center gap-2 rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-600"
+                  disabled={
+                    submitting ||
+                    suppliers.length === 0 ||
+                    fuelTypes.length === 0
+                  }
+                  className="flex items-center gap-2 rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-600 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  <FileText size={16} />
+                  {submitting ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : (
+                    <FileText size={16} />
+                  )}
                   Create PO
                 </button>
-
               </div>
-
             </form>
-
           </div>
         </div>
       )}
@@ -1222,13 +1764,9 @@ export default function Dashboard() {
 
       {modal === "System Backup" && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-
           <div className="w-full max-w-md rounded-xl bg-white shadow-2xl">
-
             <div className="flex items-center justify-between border-b px-6 py-4">
-
               <div>
-
                 <h2 className="text-lg font-bold text-slate-800">
                   System Backup
                 </h2>
@@ -1236,7 +1774,6 @@ export default function Dashboard() {
                 <p className="text-xs text-slate-500">
                   Backup your system data
                 </p>
-
               </div>
 
               <button
@@ -1245,45 +1782,35 @@ export default function Dashboard() {
               >
                 <X size={20} />
               </button>
-
             </div>
 
             <div className="p-6">
-
-              {/* IDLE */}
               {backupStatus === "idle" && (
                 <>
                   <div className="mb-5 rounded-lg bg-sky-50 p-4">
-
                     <div className="flex gap-3">
-
-                      <DatabaseBackup
-                        className="text-cyan-500"
-                      />
+                      <DatabaseBackup className="shrink-0 text-cyan-500" />
 
                       <div>
-
                         <h3 className="font-semibold text-slate-800">
                           Backup System Data
                         </h3>
 
-                        <p className="mt-1 text-xs text-slate-500">
-                          This will create a backup of your current system data.
+                        <p className="mt-1 text-xs leading-5 text-slate-500">
+                          A real backup requires a secure server-side
+                          endpoint. The current backend code supplied for
+                          this Dashboard does not include one.
                         </p>
-
                       </div>
-
                     </div>
-
                   </div>
 
                   <div className="flex justify-end gap-2">
-
                     <button
                       onClick={closeModal}
                       className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-600"
                     >
-                      Cancel
+                      Close
                     </button>
 
                     <button
@@ -1291,62 +1818,38 @@ export default function Dashboard() {
                       className="flex items-center gap-2 rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-600"
                     >
                       <DatabaseBackup size={16} />
-                      Start Backup
+                      Check Backup Availability
                     </button>
-
                   </div>
                 </>
               )}
 
-              {/* PROCESSING */}
-              {backupStatus === "processing" && (
-                <div className="py-8 text-center">
-
-                  <Loader2
-                    size={40}
-                    className="mx-auto animate-spin text-cyan-500"
-                  />
-
-                  <h3 className="mt-4 font-semibold text-slate-800">
-                    Backing up system...
-                  </h3>
-
-                  <p className="mt-1 text-xs text-slate-500">
-                    Please wait while your data is being backed up.
-                  </p>
-
-                </div>
-              )}
-
-              {/* COMPLETED */}
-              {backupStatus === "completed" && (
-                <div className="py-8 text-center">
-
-                  <CheckCircle
-                    size={48}
-                    className="mx-auto text-emerald-500"
+              {backupStatus === "unavailable" && (
+                <div className="py-6 text-center">
+                  <TriangleAlert
+                    size={44}
+                    className="mx-auto text-amber-500"
                   />
 
                   <h3 className="mt-4 text-lg font-bold text-slate-800">
-                    Backup Completed
+                    Backup Endpoint Not Configured
                   </h3>
 
-                  <p className="mt-1 text-xs text-slate-500">
-                    Your system data has been backed up successfully.
+                  <p className="mt-2 text-sm leading-6 text-slate-500">
+                    No backup was created. A Laravel endpoint and a secure
+                    database backup process must be implemented before this
+                    feature can report success.
                   </p>
 
                   <button
                     onClick={closeModal}
                     className="mt-5 rounded-lg bg-slate-800 px-5 py-2 text-sm font-medium text-white hover:bg-slate-700"
                   >
-                    Done
+                    Close
                   </button>
-
                 </div>
               )}
-
             </div>
-
           </div>
         </div>
       )}
@@ -1355,232 +1858,144 @@ export default function Dashboard() {
       {/* MAINTENANCE DETAIL MODAL */}
       {/* ====================================================== */}
 
-      {modal === "maintenance" &&
-        maintenanceData && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      {modal === "maintenance" && maintenanceData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-lg rounded-xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b px-6 py-4">
+              <div>
+                <h2 className="text-lg font-bold text-slate-800">
+                  Maintenance Detail
+                </h2>
 
-            <div className="w-full max-w-lg rounded-xl bg-white shadow-2xl">
-
-              <div className="flex items-center justify-between border-b px-6 py-4">
-
-                <div>
-
-                  <h2 className="text-lg font-bold text-slate-800">
-                    Maintenance Detail
-                  </h2>
-
-                  <p className="text-xs text-slate-500">
-                    Equipment maintenance information
-                  </p>
-
-                </div>
-
-                <button
-                  onClick={closeModal}
-                  className="rounded-full p-2 text-slate-500 hover:bg-slate-100"
-                >
-                  <X size={20} />
-                </button>
-
+                <p className="text-xs text-slate-500">
+                  Equipment maintenance information
+                </p>
               </div>
 
-              <div className="space-y-4 p-6">
-
-                {/* Equipment */}
-                <div className="rounded-lg bg-slate-50 p-4">
-
-                  <p className="text-xs text-slate-500">
-                    Equipment / Task
-                  </p>
-
-                  <p className="mt-1 font-semibold text-slate-800">
-                    {maintenanceData.equipment}
-                  </p>
-
-                  <p className="mt-1 text-xs text-slate-500">
-                    {maintenanceData.task}
-                  </p>
-
-                </div>
-
-                {/* Status + Date */}
-                <div className="grid grid-cols-2 gap-4">
-
-                  <div className="rounded-lg bg-slate-50 p-4">
-
-                    <p className="text-xs text-slate-500">
-                      Current Status
-                    </p>
-
-                    <span className="mt-2 inline-block rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
-                      {maintenanceData.status}
-                    </span>
-
-                  </div>
-
-                  <div className="rounded-lg bg-slate-50 p-4">
-
-                    <p className="text-xs text-slate-500">
-                      Scheduled Date
-                    </p>
-
-                    <p className="mt-2 font-semibold text-slate-700">
-                      {maintenanceData.scheduled}
-                    </p>
-
-                    <p className="text-xs text-slate-500">
-                      {maintenanceData.time}
-                    </p>
-
-                  </div>
-
-                </div>
-
-                {/* Update Status */}
-                <div>
-
-                  <label className="mb-1 block text-sm font-medium text-slate-700">
-                    Update Status
-                  </label>
-
-                  <select
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-cyan-500"
-                    value={maintenanceData.status}
-                    onChange={(e) =>
-                      setMaintenanceData({
-                        ...maintenanceData,
-                        status: e.target.value,
-                      })
-                    }
-                  >
-
-                    <option>
-                      Scheduled
-                    </option>
-
-                    <option>
-                      In Progress
-                    </option>
-
-                    <option>
-                      Completed
-                    </option>
-
-                    <option>
-                      Maintenance (offline)
-                    </option>
-
-                  </select>
-
-                </div>
-
-                {/* Buttons */}
-                <div className="flex justify-end gap-2 pt-2">
-
-                  <button
-                    onClick={closeModal}
-                    className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50"
-                  >
-                    Close
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      alert(
-                        `${maintenanceData.equipment} status updated to ${maintenanceData.status}`
-                      );
-
-                      closeModal();
-                    }}
-                    className="flex items-center gap-2 rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-600"
-                  >
-                    <Save size={16} />
-                    Update Status
-                  </button>
-
-                </div>
-
-              </div>
-
+              <button
+                onClick={closeModal}
+                disabled={submitting}
+                className="rounded-full p-2 text-slate-500 hover:bg-slate-100"
+              >
+                <X size={20} />
+              </button>
             </div>
 
+            <div className="space-y-4 p-6">
+              <StatusMessage
+                error={formError}
+                success={formSuccess}
+              />
+
+              {/* Equipment */}
+
+              <div className="rounded-lg bg-slate-50 p-4">
+                <p className="text-xs text-slate-500">
+                  Equipment / Task
+                </p>
+
+                <p className="mt-1 font-semibold capitalize text-slate-800">
+                  {getEquipmentLabel(maintenanceData)}
+                </p>
+
+                <p className="mt-1 text-xs text-slate-500">
+                  {maintenanceData.description ||
+                    maintenanceData.maintenance_type ||
+                    "Maintenance"}
+                </p>
+
+                {maintenanceData.notes && (
+                  <p className="mt-2 text-xs text-slate-500">
+                    Notes: {maintenanceData.notes}
+                  </p>
+                )}
+              </div>
+
+              {/* Status + Date */}
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="rounded-lg bg-slate-50 p-4">
+                  <p className="text-xs text-slate-500">
+                    Current Status
+                  </p>
+
+                  <span className="mt-2 inline-block rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
+                    {maintenanceStatusLabel(maintenanceData.status)}
+                  </span>
+                </div>
+
+                <div className="rounded-lg bg-slate-50 p-4">
+                  <p className="text-xs text-slate-500">
+                    Scheduled Date
+                  </p>
+
+                  <p className="mt-2 font-semibold text-slate-700">
+                    {formatDate(maintenanceData.scheduled_date)}
+                  </p>
+
+                  <p className="text-xs text-slate-500">
+                    {maintenanceData.performed_date
+                      ? `Performed: ${formatDate(maintenanceData.performed_date)}`
+                      : "Not performed yet"}
+                  </p>
+                </div>
+              </div>
+
+              {/* Update Status */}
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">
+                  Update Status
+                </label>
+
+                <select
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-cyan-500"
+                  value={maintenanceData.status}
+                  onChange={(event) => {
+                    setMaintenanceData({
+                      ...maintenanceData,
+                      status: event.target.value,
+                    });
+
+                    setFormError("");
+                    setFormSuccess("");
+                  }}
+                >
+                  <option value="scheduled">Scheduled</option>
+                  <option value="in_progress">In Progress</option>
+                  <option value="completed">Completed</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  onClick={closeModal}
+                  disabled={submitting}
+                  className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50"
+                >
+                  Close
+                </button>
+
+                <button
+                  onClick={handleUpdateMaintenance}
+                  disabled={submitting}
+                  className="flex items-center gap-2 rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-600 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {submitting ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : formSuccess ? (
+                    <CheckCircle size={16} />
+                  ) : (
+                    <Save size={16} />
+                  )}
+                  Update Status
+                </button>
+              </div>
+            </div>
           </div>
-        )}
-
-    </>
-  );
-}
-
-// ======================================================
-// Tank Battery
-// ======================================================
-
-function TankBattery({
-  pump,
-  pct,
-  status,
-}) {
-  const isHigh = status === "High";
-
-  const theme = isHigh
-    ? {
-        pill:
-          "bg-emerald-50 text-emerald-600",
-        from: "#34d399",
-        to: "#059669",
-      }
-    : {
-        pill:
-          "bg-rose-50 text-rose-500",
-        from: "#fb7185",
-        to: "#e11d48",
-      };
-
-  return (
-    <div className="flex flex-col items-center gap-1.5">
-
-      <span
-        className={`rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-wide ${theme.pill}`}
-      >
-        {status}
-      </span>
-
-      {/* Battery Cap */}
-      <div className="h-1 w-4 rounded-t-sm bg-slate-300" />
-
-      {/* Battery Body */}
-      <div className="relative h-24 w-14 overflow-hidden rounded-md border-2 border-slate-200 bg-slate-50">
-
-        <div
-          className="absolute bottom-0 left-0 w-full rounded-b-sm transition-all duration-500"
-          style={{
-            height: `${pct}%`,
-            background: `linear-gradient(180deg, ${theme.from}, ${theme.to})`,
-          }}
-        />
-
-        <div className="absolute inset-0 flex items-center justify-center">
-
-          <span
-            className="text-[10px] font-bold drop-shadow-sm"
-            style={{
-              color:
-                pct > 45
-                  ? "#ffffff"
-                  : "#334155",
-            }}
-          >
-            {pct}%
-          </span>
-
         </div>
-
-      </div>
-
-      <div className="text-[11px] font-medium text-slate-600">
-        {pump}
-      </div>
-
-    </div>
+      )}
+    </>
   );
 }

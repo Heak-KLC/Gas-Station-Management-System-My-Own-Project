@@ -539,7 +539,7 @@ export default function MasterReports() {
   // =====================================================
 
   return (
-    <div className="space-y-5 p-6 bg-slate-50/60 min-h-screen print:bg-white print:p-0 print:m-0 print:min-h-0 print:w-full print:overflow-visible">
+    <div className="space-y-5 p-6 bg-gray-300 min-h-screen print:bg-white print:p-0 print:m-0 print:min-h-0 print:w-full print:overflow-visible">
 
       {/* Print stylesheet for A4 reports. */}
       <style>{`

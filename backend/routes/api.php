@@ -23,6 +23,41 @@ use App\Http\Controllers\SystemSettingController;
 use App\Http\Controllers\EquipmentMaintenanceController;
 use App\Http\Controllers\ReportCacheController;
 use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\AuditLogController;
+
+
+
+
+// =====================================================
+// PROFILE & CHANGE PASSWORD API
+// All routes require a valid Sanctum token.
+// =====================================================
+
+Route::middleware('auth:sanctum')->group(function () {
+
+    // Get the currently authenticated user's profile.
+    Route::get(
+        '/profile',
+        [ProfileController::class, 'show']
+    );
+
+    // Update the current user's profile.
+    Route::put(
+        '/profile',
+        [ProfileController::class, 'update']
+    );
+
+    // Change the current user's password.
+    Route::post(
+        '/change-password',
+        [ProfileController::class, 'changePassword']
+    );
+
+});
+
+
+
 
 
 // =====================================================
@@ -521,5 +556,9 @@ Route::middleware('auth:sanctum')->group(function () {
         '/notifications/archive-all',
         [NotificationController::class, 'archiveAll']
     );
+
+
+Route::get('/activity-logs', [AuditLogController::class, 'index']);
+
 
 });

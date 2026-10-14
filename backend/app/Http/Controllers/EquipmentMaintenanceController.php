@@ -3,7 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Models\EquipmentMaintenance;
+use App\Models\AuditLog;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class EquipmentMaintenanceController extends Controller
 {
@@ -13,15 +15,15 @@ class EquipmentMaintenanceController extends Controller
      */
     public function index(Request $request)
     {
-        // Start the query and include the employee who performed maintenance.
+        // Include the employee who performed the maintenance.
         $query = EquipmentMaintenance::with('performedBy');
 
-        // Filter records by equipment type when requested.
+        // Filter by equipment type.
         if ($request->filled('equipment_type')) {
             $query->where('equipment_type', $request->equipment_type);
         }
 
-        // Filter records by status when requested.
+        // Filter by maintenance status.
         if ($request->filled('status')) {
             $query->where('status', $request->status);
         }
@@ -40,11 +42,11 @@ class EquipmentMaintenanceController extends Controller
 
     /**
      * POST /api/equipment-maintenance
-     * Create a maintenance record.
+     * Create a maintenance record and audit log.
      */
     public function store(Request $request)
     {
-        // Validate input against the enum values in the MySQL table.
+        // Validate input against the database enum values.
         $validated = $request->validate([
             'equipment_type' => [
                 'required',
@@ -68,10 +70,25 @@ class EquipmentMaintenanceController extends Controller
             'notes' => 'nullable|string',
         ]);
 
-        // Create the record using only validated fields.
-        $record = EquipmentMaintenance::create($validated);
+        // Create the maintenance record and audit log atomically.
+        $record = DB::transaction(function () use (
+            $request,
+            $validated
+        ) {
+            $record = EquipmentMaintenance::create($validated);
 
-        // Return the newly created record, including employee details.
+            // Record the newly created maintenance information.
+            $this->recordAuditLog(
+                $request,
+                'CREATE',
+                $record->maintenance_id,
+                null,
+                $this->getMaintenanceAuditValues($record)
+            );
+
+            return $record;
+        });
+
         return response()->json([
             'success' => true,
             'message' => 'Maintenance record created successfully.',
@@ -96,7 +113,7 @@ class EquipmentMaintenanceController extends Controller
 
     /**
      * PUT/PATCH /api/equipment-maintenance/{equipment_maintenance}
-     * Update an existing maintenance record.
+     * Update a maintenance record and audit the changes.
      */
     public function update(Request $request, $id)
     {
@@ -128,29 +145,128 @@ class EquipmentMaintenanceController extends Controller
             'notes' => 'sometimes|nullable|string',
         ]);
 
-        // Apply validated changes and save the record.
-        $record->update($validated);
+        // Capture the existing values before making changes.
+        $oldValues = $this->getMaintenanceAuditValues($record);
+
+        // Update the record and audit log in the same transaction.
+        $updatedRecord = DB::transaction(function () use (
+            $request,
+            $record,
+            $validated,
+            $oldValues
+        ) {
+            $record->update($validated);
+            $record->refresh();
+
+            // Save both the old and updated maintenance values.
+            $this->recordAuditLog(
+                $request,
+                'UPDATE',
+                $record->maintenance_id,
+                $oldValues,
+                $this->getMaintenanceAuditValues($record)
+            );
+
+            return $record;
+        });
 
         return response()->json([
             'success' => true,
             'message' => 'Maintenance record updated successfully.',
-            'data' => $record->fresh()->load('performedBy'),
+            'data' => $updatedRecord->load('performedBy'),
         ]);
     }
 
     /**
      * DELETE /api/equipment-maintenance/{equipment_maintenance}
-     * Delete a maintenance record.
+     * Delete a maintenance record and audit the deletion.
      */
-    public function destroy($id)
+    public function destroy(Request $request, $id)
     {
         $record = EquipmentMaintenance::findOrFail($id);
 
-        $record->delete();
+        // Preserve the maintenance information before deleting it.
+        $oldValues = $this->getMaintenanceAuditValues($record);
+
+        // Delete the record and write its audit log atomically.
+        DB::transaction(function () use (
+            $request,
+            $record,
+            $oldValues
+        ) {
+            $this->recordAuditLog(
+                $request,
+                'DELETE',
+                $record->maintenance_id,
+                $oldValues,
+                null
+            );
+
+            $record->delete();
+        });
 
         return response()->json([
             'success' => true,
             'message' => 'Maintenance record deleted successfully.',
+        ]);
+    }
+
+    /**
+     * Prepare maintenance fields for audit logging.
+     * Keep a snapshot of the important maintenance information.
+     */
+    private function getMaintenanceAuditValues(
+        EquipmentMaintenance $record
+    ): array {
+        return [
+            'equipment_type' => $record->equipment_type,
+            'equipment_id' => $record->equipment_id,
+            'scheduled_date' => $record->scheduled_date,
+            'performed_date' => $record->performed_date,
+            'maintenance_type' => $record->maintenance_type,
+            'description' => $record->description,
+            'cost' => $record->cost,
+            'status' => $record->status,
+            'performed_by' => $record->performed_by,
+            'notes' => $record->notes,
+        ];
+    }
+
+    /**
+     * Create an audit log entry in the audit_logs table.
+     */
+    private function recordAuditLog(
+        Request $request,
+        string $action,
+        $entityId,
+        ?array $oldValues = null,
+        ?array $newValues = null
+    ): void {
+        AuditLog::create([
+            // Identify the authenticated user performing the action.
+            'user_id' => $request->user()?->user_id,
+
+            'action' => $action,
+            'entity_type' => 'EquipmentMaintenance',
+            'entity_id' => $entityId,
+
+            // Encode snapshots as JSON for storage in the database.
+            'old_value' => $oldValues === null
+                ? null
+                : json_encode(
+                    $oldValues,
+                    JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+                ),
+
+            'new_value' => $newValues === null
+                ? null
+                : json_encode(
+                    $newValues,
+                    JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+                ),
+
+            // Record the request IP address.
+            'ip_address' => $request->ip(),
         ]);
     }
 }

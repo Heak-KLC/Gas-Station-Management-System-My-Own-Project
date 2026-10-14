@@ -3,7 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Models\FuelPump;
+use App\Models\AuditLog;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class FuelPumpController extends Controller
 {
@@ -22,7 +24,7 @@ class FuelPumpController extends Controller
 
     // =========================================================
     // POST /api/fuel-pumps
-    // Create a new fuel pump.
+    // Create a new fuel pump and record its activity.
     // =========================================================
     public function store(Request $request)
     {
@@ -46,13 +48,9 @@ class FuelPumpController extends Controller
             ],
 
             'model' => 'nullable|string|max:50',
-
             'serial_number' => 'nullable|string|max:50',
-
             'installation_date' => 'nullable|date',
-
             'last_maintenance_date' => 'nullable|date',
-
             'next_maintenance_date' => 'nullable|date',
 
             'meter_reading' => [
@@ -62,16 +60,44 @@ class FuelPumpController extends Controller
             ],
         ]);
 
-        // Default status.
+        // Apply default values when optional values are missing.
         $validated['status'] =
             $validated['status'] ?? 'available';
 
-        // Default meter reading.
         $validated['meter_reading'] =
             $validated['meter_reading'] ?? 0;
 
-        // Create pump.
-        $fuelPump = FuelPump::create($validated);
+        // Create the pump and its audit log in one transaction.
+        $fuelPump = DB::transaction(function () use ($validated, $request) {
+
+            // Create the new fuel pump.
+            $fuelPump = FuelPump::create($validated);
+
+            // Capture the newly created pump information.
+            $newValues = $fuelPump->only([
+                'pump_id',
+                'pump_number',
+                'fuel_id',
+                'status',
+                'model',
+                'serial_number',
+                'installation_date',
+                'last_maintenance_date',
+                'next_maintenance_date',
+                'meter_reading',
+            ]);
+
+            // Record the CREATE activity.
+            $this->recordAuditLog(
+                $request,
+                'CREATE',
+                $fuelPump->pump_id,
+                null,
+                $newValues
+            );
+
+            return $fuelPump;
+        });
 
         // Return pump with Fuel Type.
         $fuelPump->load('fuelType');
@@ -95,7 +121,7 @@ class FuelPumpController extends Controller
 
     // =========================================================
     // PUT/PATCH /api/fuel-pumps/{fuel_pump}
-    // Update fuel pump.
+    // Update fuel pump and record old/new values.
     // =========================================================
     public function update(
         Request $request,
@@ -123,13 +149,9 @@ class FuelPumpController extends Controller
             ],
 
             'model' => 'nullable|string|max:50',
-
             'serial_number' => 'nullable|string|max:50',
-
             'installation_date' => 'nullable|date',
-
             'last_maintenance_date' => 'nullable|date',
-
             'next_maintenance_date' => 'nullable|date',
 
             'meter_reading' => [
@@ -139,7 +161,55 @@ class FuelPumpController extends Controller
             ],
         ]);
 
-        $fuelPump->update($validated);
+        // Update the pump and audit log atomically.
+        DB::transaction(function () use (
+            $fuelPump,
+            $validated,
+            $request
+        ) {
+            // Capture the old values BEFORE updating.
+            $oldValues = $fuelPump->only([
+                'pump_id',
+                'pump_number',
+                'fuel_id',
+                'status',
+                'model',
+                'serial_number',
+                'installation_date',
+                'last_maintenance_date',
+                'next_maintenance_date',
+                'meter_reading',
+            ]);
+
+            // Preserve the existing update logic.
+            $fuelPump->update($validated);
+
+            // Refresh the model to get current database values.
+            $fuelPump->refresh();
+
+            // Capture the new values AFTER updating.
+            $newValues = $fuelPump->only([
+                'pump_id',
+                'pump_number',
+                'fuel_id',
+                'status',
+                'model',
+                'serial_number',
+                'installation_date',
+                'last_maintenance_date',
+                'next_maintenance_date',
+                'meter_reading',
+            ]);
+
+            // Record the UPDATE activity.
+            $this->recordAuditLog(
+                $request,
+                'UPDATE',
+                $fuelPump->pump_id,
+                $oldValues,
+                $newValues
+            );
+        });
 
         $fuelPump->load('fuelType');
 
@@ -151,14 +221,13 @@ class FuelPumpController extends Controller
 
     // =========================================================
     // DELETE /api/fuel-pumps/{fuel_pump}
-    // Delete fuel pump.
+    // Delete fuel pump only when it has no fuel sales.
     // =========================================================
-    public function destroy(FuelPump $fuelPump)
-    {
-        // -----------------------------------------------------
-        // Do not delete a pump if it already has fuel sales.
-        // This protects historical sales data.
-        // -----------------------------------------------------
+    public function destroy(
+        Request $request,
+        FuelPump $fuelPump
+    ) {
+        // Preserve the existing protection for historical sales.
         if ($fuelPump->fuelSales()->exists()) {
             return response()->json([
                 'message' =>
@@ -166,10 +235,78 @@ class FuelPumpController extends Controller
             ], 409);
         }
 
-        $fuelPump->delete();
+        // Record the old pump information before deletion.
+        DB::transaction(function () use ($fuelPump, $request) {
+
+            $oldValues = $fuelPump->only([
+                'pump_id',
+                'pump_number',
+                'fuel_id',
+                'status',
+                'model',
+                'serial_number',
+                'installation_date',
+                'last_maintenance_date',
+                'next_maintenance_date',
+                'meter_reading',
+            ]);
+
+            // Record the DELETE activity before removing the pump.
+            $this->recordAuditLog(
+                $request,
+                'DELETE',
+                $fuelPump->pump_id,
+                $oldValues,
+                null
+            );
+
+            // Delete the pump after recording its information.
+            $fuelPump->delete();
+        });
 
         return response()->json([
             'message' => 'Fuel pump deleted successfully.',
+        ]);
+    }
+
+    // =========================================================
+    // Reusable helper for writing audit_logs records.
+    // =========================================================
+    private function recordAuditLog(
+        Request $request,
+        string $action,
+        $entityId,
+        ?array $oldValues = null,
+        ?array $newValues = null
+    ) {
+        AuditLog::create([
+            // ID of the authenticated user performing the action.
+            'user_id' => $request->user()?->user_id,
+
+            // CREATE, UPDATE, or DELETE.
+            'action' => $action,
+
+            // Identify the affected resource.
+            'entity_type' => 'FuelPump',
+            'entity_id' => $entityId,
+
+            // Store old/new values as JSON strings.
+            'old_value' => $oldValues === null
+                ? null
+                : json_encode(
+                    $oldValues,
+                    JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+                ),
+
+            'new_value' => $newValues === null
+                ? null
+                : json_encode(
+                    $newValues,
+                    JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+                ),
+
+            // Record the request IP address.
+            'ip_address' => $request->ip(),
         ]);
     }
 }

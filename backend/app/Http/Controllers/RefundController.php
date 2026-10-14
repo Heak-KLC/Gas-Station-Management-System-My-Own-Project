@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AuditLog;
 use App\Models\Refund;
 use App\Models\FuelSale;
 use App\Models\StoreSale;
@@ -31,7 +32,7 @@ class RefundController extends Controller
     }
 
     /**
-     * Create a new Refund Request.
+     * Create a new Refund Request and record an audit log.
      */
     public function store(Request $request)
     {
@@ -83,6 +84,7 @@ class RefundController extends Controller
 
         try {
             $refund = DB::transaction(function () use (
+                $request,
                 $validated,
                 $fuelSaleId,
                 $storeSaleId,
@@ -165,9 +167,9 @@ class RefundController extends Controller
                 }
 
                 /*
-                 * Step 3: Save the new request as pending.
+                 * Step 3: Create the refund request as pending.
                  */
-                return Refund::create([
+                $refund = Refund::create([
                     'original_sale_id' => $fuelSaleId,
                     'original_store_sale_id' => $storeSaleId,
                     'refund_amount' => $refundAmount,
@@ -176,6 +178,17 @@ class RefundController extends Controller
                     'processed_by' => $user->user_id,
                     'status' => 'pending',
                 ]);
+
+                // Record the creation in the same transaction.
+                $this->recordAuditLog(
+                    $request,
+                    'CREATE',
+                    $refund->refund_id,
+                    null,
+                    $this->getRefundAuditValues($refund)
+                );
+
+                return $refund;
             });
 
             return response()->json([
@@ -238,7 +251,10 @@ class RefundController extends Controller
         }
 
         try {
-            $refund = DB::transaction(function () use ($refundId) {
+            $refund = DB::transaction(function () use (
+                $request,
+                $refundId
+            ) {
                 // Find and lock the refund request.
                 $refund = Refund::where(
                     'refund_id',
@@ -253,9 +269,21 @@ class RefundController extends Controller
                     ]);
                 }
 
+                // Capture the original values before the update.
+                $oldValues = $this->getRefundAuditValues($refund);
+
                 // Update the request status.
                 $refund->status = 'approved';
                 $refund->save();
+
+                // Record the approval with old and new values.
+                $this->recordAuditLog(
+                    $request,
+                    'APPROVE',
+                    $refund->refund_id,
+                    $oldValues,
+                    $this->getRefundAuditValues($refund)
+                );
 
                 return $refund;
             });
@@ -300,7 +328,10 @@ class RefundController extends Controller
         }
 
         try {
-            $refund = DB::transaction(function () use ($refundId) {
+            $refund = DB::transaction(function () use (
+                $request,
+                $refundId
+            ) {
                 // Find and lock the refund request.
                 $refund = Refund::where(
                     'refund_id',
@@ -315,9 +346,21 @@ class RefundController extends Controller
                     ]);
                 }
 
+                // Capture the original values before the update.
+                $oldValues = $this->getRefundAuditValues($refund);
+
                 // Update the request status.
                 $refund->status = 'rejected';
                 $refund->save();
+
+                // Record the rejection with old and new values.
+                $this->recordAuditLog(
+                    $request,
+                    'REJECT',
+                    $refund->refund_id,
+                    $oldValues,
+                    $this->getRefundAuditValues($refund)
+                );
 
                 return $refund;
             });
@@ -335,5 +378,60 @@ class RefundController extends Controller
                 'message' => 'Refund request not found.',
             ], 404);
         }
+    }
+
+    /**
+     * Return the refund fields that should be recorded in audit logs.
+     */
+    private function getRefundAuditValues(Refund $refund): array
+    {
+        return [
+            'original_sale_id' => $refund->original_sale_id,
+            'original_store_sale_id' => $refund->original_store_sale_id,
+            'refund_amount' => $refund->refund_amount,
+            'refund_date' => $refund->refund_date,
+            'reason' => $refund->reason,
+            'processed_by' => $refund->processed_by,
+            'status' => $refund->status,
+        ];
+    }
+
+    /**
+     * Save an audit log for a refund action.
+     */
+    private function recordAuditLog(
+        Request $request,
+        string $action,
+        $entityId,
+        ?array $oldValues = null,
+        ?array $newValues = null
+    ): void {
+        AuditLog::create([
+            // Store the ID of the authenticated user performing the action.
+            'user_id' => $request->user()?->user_id,
+
+            // Store the action and the affected entity.
+            'action' => $action,
+            'entity_type' => 'Refund',
+            'entity_id' => $entityId,
+
+            // Encode old and new values as JSON.
+            'old_value' => $oldValues === null
+                ? null
+                : json_encode(
+                    $oldValues,
+                    JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+                ),
+
+            'new_value' => $newValues === null
+                ? null
+                : json_encode(
+                    $newValues,
+                    JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+                ),
+
+            // Store the request IP address.
+            'ip_address' => $request->ip(),
+        ]);
     }
 }

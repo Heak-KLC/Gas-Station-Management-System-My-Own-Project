@@ -116,3 +116,24 @@ export const updateSystemSettings = async (settingsData) => {
   const response = await api.put("/system-settings", settingsData);
   return response.data;
 };
+
+
+ // =====================================================
+ // FUEL TYPES API
+ // ហៅ Laravel API សម្រាប់ទាញយក និងកែតម្លៃប្រភេទប្រេង
+ // =====================================================
+
+// ទាញយកប្រភេទប្រេងទាំងអស់ពី Database
+export const getFuelTypes = async () => {
+  const response = await api.get("/fuel-types");
+
+  // គាំទ្រ API ដែលត្រឡប់ទិន្នន័យក្នុង response.data.data
+  // ឬត្រឡប់ទិន្នន័យផ្ទាល់ក្នុង response.data
+  return response.data.data ?? response.data;
+};
+
+// កែប្រែព័ត៌មានប្រភេទប្រេងដែលមានស្រាប់
+export const updateFuelType = async (id, fuelData) => {
+  const response = await api.put(`/fuel-types/${id}`, fuelData);
+  return response.data;
+};

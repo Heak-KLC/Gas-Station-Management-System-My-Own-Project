@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
+use App\Models\AuditLog;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 
@@ -40,20 +41,40 @@ class AuthController extends Controller
         //
         // password_hash is the column used by our database.
         // --------------------------------------------------
-        if (!$user || !Hash::check($request->password, $user->password_hash)) {
-            return response()->json([
-                'message' => 'Invalid email or password.'
-            ], 401);
-        }
+        // Record a failed login attempt without storing the password.
+if (!$user || !Hash::check($request->password, $user->password_hash)) {
+
+    AuditLog::create([
+        'user_id' => $user?->user_id,
+        'action' => 'LOGIN_FAILED',
+        'entity_type' => 'User',
+        'entity_id' => $user?->user_id,
+        'ip_address' => $request->ip(),
+    ]);
+
+    return response()->json([
+        'message' => 'Invalid email or password.'
+    ], 401);
+}
 
         // --------------------------------------------------
         // Check whether the user account is active.
         // --------------------------------------------------
-        if (!$user->is_active) {
-            return response()->json([
-                'message' => 'Your account is inactive.'
-            ], 403);
-        }
+        // Record a login attempt made with an inactive account.
+if (!$user->is_active) {
+
+    AuditLog::create([
+        'user_id' => $user->user_id,
+        'action' => 'LOGIN_BLOCKED',
+        'entity_type' => 'User',
+        'entity_id' => $user->user_id,
+        'ip_address' => $request->ip(),
+    ]);
+
+    return response()->json([
+        'message' => 'Your account is inactive.'
+    ], 403);
+}
 
         // --------------------------------------------------
         // Create a NEW Sanctum token for this login session.
@@ -75,6 +96,17 @@ class AuthController extends Controller
         $user->update([
             'last_login' => now(),
         ]);
+
+// --------------------------------------------------
+// Record successful login activity in audit_logs.
+// --------------------------------------------------
+AuditLog::create([
+    'user_id' => $user->user_id,
+    'action' => 'LOGIN_SUCCESS',
+    'entity_type' => 'User',
+    'entity_id' => $user->user_id,
+    'ip_address' => $request->ip(),
+]);
 
         // --------------------------------------------------
         // Return login information to React.
@@ -127,7 +159,20 @@ class AuthController extends Controller
         // requirement is to logout this user from
         // all active browser sessions.
         // --------------------------------------------------
-        $request->user()->tokens()->delete();
+        // Get the currently authenticated user before deleting tokens.
+$user = $request->user();
+
+// Record the logout activity before removing the user's tokens.
+AuditLog::create([
+    'user_id' => $user->user_id,
+    'action' => 'LOGOUT',
+    'entity_type' => 'User',
+    'entity_id' => $user->user_id,
+    'ip_address' => $request->ip(),
+]);
+
+// Preserve the existing behavior: log out all sessions for this user.
+$user->tokens()->delete();
 
         // --------------------------------------------------
         // Return a successful response to React.
