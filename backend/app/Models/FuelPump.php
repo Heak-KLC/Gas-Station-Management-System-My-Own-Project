@@ -13,17 +13,21 @@ class FuelPump extends Model
 
     protected $primaryKey = 'pump_id';
 
-    protected $fillable = [
-        'pump_number',
-        'fuel_id',
-        'status',
-        'model',
-        'serial_number',
-        'installation_date',
-        'last_maintenance_date',
-        'next_maintenance_date',
-        'meter_reading',
-    ];
+    
+protected $fillable = [
+    'pump_number',
+    'fuel_id',
+    'tank_id',
+    'employee_id',
+    'status',
+    'model',
+    'serial_number',
+    'installation_date',
+    'last_maintenance_date',
+    'next_maintenance_date',
+    'meter_reading',
+];
+
 
     protected $casts = [
         'installation_date' => 'date',
@@ -73,4 +77,24 @@ class FuelPump extends Model
             'pump_id'
         );
     }
+
+
+public function tank()
+{
+    return $this->belongsTo(
+        FuelTank::class,
+        'tank_id',
+        'tank_id'
+    );
+}
+
+public function attendant()
+{
+    return $this->belongsTo(
+        Employee::class,
+        'employee_id',
+        'employee_id'
+    );
+}
+
 }

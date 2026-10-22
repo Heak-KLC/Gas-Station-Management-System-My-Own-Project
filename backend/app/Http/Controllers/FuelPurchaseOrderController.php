@@ -6,6 +6,7 @@ use App\Models\AuditLog;
 use App\Models\FuelPurchaseOrder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 
 class FuelPurchaseOrderController extends Controller
 {
@@ -128,13 +129,12 @@ class FuelPurchaseOrderController extends Controller
         // Validate the updated Purchase Order information.
         $validated = $request->validate([
             'po_number' => [
-                'required',
-                'string',
-                'max:50',
-                'unique:fuel_purchase_orders,po_number,' .
-                    $fuelPurchaseOrder->purchase_order_id .
-                    ',purchase_order_id',
-            ],
+    'required',
+    'string',
+    'max:50',
+    Rule::unique('fuel_purchase_orders', 'po_number')
+        ->ignore($fuelPurchaseOrder),
+],
             'supplier_id' => 'required|integer|exists:suppliers,supplier_id',
             'fuel_id' => 'required|integer|exists:fuel_types,fuel_id',
             'quantity' => 'required|numeric|min:0.001',

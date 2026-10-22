@@ -5,38 +5,102 @@ namespace App\Http\Controllers;
 use App\Models\Notification;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Database\Eloquent\Builder;
 
 class NotificationController extends Controller
 {
     /**
-     * Verify that the authenticated user is an Admin.
+     * Allow Admin and Manager to access notifications.
      */
-    private function getAdminId(Request $request): int
+    private function getAuthorizedUser(Request $request)
     {
         $user = $request->user();
 
-        // Allow only Admin users to access the Notifications menu.
+        // Only Admin and Manager can access this controller.
         abort_unless(
-            $user && $user->role === 'admin',
+            $user && in_array($user->role, ['admin', 'manager'], true),
             403,
-            'Only administrators can access notifications.'
+            'You are not authorized to access notifications.'
         );
 
-        return (int) $user->user_id;
+        return $user;
+    }
+
+    /**
+     * Apply notification visibility rules according to user role.
+     *
+     * Admin:
+     * - Can view personal notifications.
+     * - Can view all shared notifications.
+     *
+     * Manager:
+     * - Can view personal notifications.
+     * - Can view shared fuel, maintenance, and delivery alerts.
+     */
+    private function applyNotificationVisibility(
+        Builder $query,
+        $user
+    ): Builder {
+        $userId = (int) $user->user_id;
+
+        $managerSharedTypes = [
+            'fuel_low_stock',
+            'maintenance_reminder',
+            'delivery_reminder',
+        ];
+
+        return $query->where(function ($q) use (
+            $user,
+            $userId,
+            $managerSharedTypes
+        ) {
+            // Notifications created specifically for this user.
+            $q->where('notifications.user_id', $userId);
+
+            // Shared notifications have a NULL user_id.
+            $q->orWhere(function ($sharedQuery) use (
+                $user,
+                $managerSharedTypes
+            ) {
+                $sharedQuery->whereNull('notifications.user_id');
+
+                // Admin can see all shared notification types.
+                if ($user->role === 'admin') {
+                    return;
+                }
+
+                // Manager can see only relevant shared alerts.
+                $sharedQuery->whereIn(
+                    'notifications.notification_type',
+                    $managerSharedTypes
+                );
+            });
+        });
+    }
+
+    /**
+     * Apply the expiration condition.
+     */
+    private function applyActiveCondition(Builder $query): Builder
+    {
+        return $query->where(function ($q) {
+            $q->whereNull('notifications.expires_at')
+              ->orWhere('notifications.expires_at', '>', now());
+        });
     }
 
     /**
      * GET /api/notifications
-     * Retrieve active notifications that have not been archived
-     * by the currently authenticated Admin.
+     *
+     * Retrieve active notifications visible to the current user.
      */
     public function index(Request $request)
     {
-        $adminId = $this->getAdminId($request);
+        $user = $this->getAuthorizedUser($request);
+        $userId = (int) $user->user_id;
 
-        // Retrieve notifications and join this Admin's read status.
         $query = Notification::query()
-            ->leftJoin('notification_reads', function ($join) use ($adminId) {
+            ->leftJoin('notification_reads', function ($join) use ($userId) {
                 $join->on(
                     'notifications.notification_id',
                     '=',
@@ -44,7 +108,7 @@ class NotificationController extends Controller
                 )->where(
                     'notification_reads.user_id',
                     '=',
-                    $adminId
+                    $userId
                 );
             })
             ->select([
@@ -57,25 +121,17 @@ class NotificationController extends Controller
                 'notifications.created_at',
                 'notifications.expires_at',
             ])
-            // Determine whether this Admin has read each notification.
             ->selectRaw(
                 'CASE
                     WHEN notification_reads.notification_id IS NULL
                     THEN 0
                     ELSE 1
                 END AS is_read'
-            )
-            // Include notifications belonging to this Admin
-            // and shared notifications where user_id is NULL.
-            ->where(function ($q) use ($adminId) {
-                $q->where('notifications.user_id', $adminId)
-                  ->orWhereNull('notifications.user_id');
-            })
-            // Exclude notifications that have already expired.
-            ->where(function ($q) {
-                $q->whereNull('notifications.expires_at')
-                  ->orWhere('notifications.expires_at', '>', now());
-            });
+            );
+
+        // Apply role-based visibility and expiration rules.
+        $this->applyNotificationVisibility($query, $user);
+        $this->applyActiveCondition($query);
 
         // Map frontend filter labels to database notification types.
         $type = $request->query('type');
@@ -89,7 +145,6 @@ class NotificationController extends Controller
             'Monitor Delivery' => 'delivery_reminder',
         ];
 
-        // Apply the selected notification type filter, if provided.
         if ($type && $type !== 'All Notifications') {
             $type = $typeMap[$type] ?? $type;
 
@@ -99,10 +154,8 @@ class NotificationController extends Controller
             );
         }
 
-        // IMPORTANT:
-        // Exclude archived notifications BEFORE calling get().
-        // Archive status is specific to the currently logged-in Admin.
-        $query->whereNotExists(function ($archiveQuery) use ($adminId) {
+        // Exclude notifications archived by this user only.
+        $query->whereNotExists(function ($archiveQuery) use ($userId) {
             $archiveQuery
                 ->select(DB::raw(1))
                 ->from('notification_archives')
@@ -112,21 +165,18 @@ class NotificationController extends Controller
                 )
                 ->where(
                     'notification_archives.user_id',
-                    $adminId
+                    $userId
                 );
         });
 
-        // Retrieve only notifications that match all conditions above.
         $notifications = $query
             ->orderByDesc('notifications.created_at')
             ->get();
 
-        // Count unread notifications after archive and type filtering.
         $unreadCount = $notifications
             ->filter(fn ($item) => !(bool) $item->is_read)
             ->count();
 
-        // Return notifications and unread count to the frontend.
         return response()->json([
             'success' => true,
             'data' => $notifications,
@@ -136,27 +186,26 @@ class NotificationController extends Controller
 
     /**
      * PATCH /api/notifications/{id}/read
-     * Mark one notification as read for this Admin.
+     *
+     * Mark one visible notification as read.
      */
     public function markAsRead(Request $request, $id)
     {
-        $adminId = $this->getAdminId($request);
+        $user = $this->getAuthorizedUser($request);
+        $userId = (int) $user->user_id;
 
-        // Ensure the notification belongs to this Admin
-        // or is shared system-wide.
-        $notification = Notification::query()
-            ->where('notification_id', $id)
-            ->where(function ($q) use ($adminId) {
-                $q->where('user_id', $adminId)
-                  ->orWhereNull('user_id');
-            })
-            ->firstOrFail();
+        $query = Notification::query()
+            ->where('notifications.notification_id', $id);
 
-        // Save the read status for this Admin without modifying
-        // the shared notification's original database record.
+        $this->applyNotificationVisibility($query, $user);
+        $this->applyActiveCondition($query);
+
+        $notification = $query->firstOrFail();
+
+        // Record read status separately for each user.
         DB::table('notification_reads')->updateOrInsert(
             [
-                'user_id' => $adminId,
+                'user_id' => $userId,
                 'notification_id' => $notification->notification_id,
             ],
             [
@@ -164,7 +213,6 @@ class NotificationController extends Controller
             ]
         );
 
-        // Return the notification with its updated read status.
         $data = $notification->toArray();
         $data['is_read'] = true;
 
@@ -177,39 +225,50 @@ class NotificationController extends Controller
 
     /**
      * PATCH /api/notifications/read-all
-     * Mark all active notifications visible to this Admin as read.
+     *
+     * Mark all active, visible, non-archived notifications as read.
      */
     public function markAllAsRead(Request $request)
     {
-        $adminId = $this->getAdminId($request);
+        $user = $this->getAuthorizedUser($request);
+        $userId = (int) $user->user_id;
 
-        // Find active notifications owned by this Admin
-        // or shared system-wide.
-        $notificationIds = Notification::query()
-            ->where(function ($q) use ($adminId) {
-                $q->where('user_id', $adminId)
-                  ->orWhereNull('user_id');
-            })
-            ->where(function ($q) {
-                $q->whereNull('expires_at')
-                  ->orWhere('expires_at', '>', now());
-            })
-            ->pluck('notification_id');
+        $query = Notification::query();
+
+        $this->applyNotificationVisibility($query, $user);
+        $this->applyActiveCondition($query);
+
+        // Do not mark archived notifications as read through this action.
+        $query->whereNotExists(function ($archiveQuery) use ($userId) {
+            $archiveQuery
+                ->select(DB::raw(1))
+                ->from('notification_archives')
+                ->whereColumn(
+                    'notification_archives.notification_id',
+                    'notifications.notification_id'
+                )
+                ->where(
+                    'notification_archives.user_id',
+                    $userId
+                );
+        });
+
+        $notificationIds = $query->pluck(
+            'notifications.notification_id'
+        );
 
         $updatedCount = 0;
+        $readAt = now();
 
-        // Insert a read record for each notification.
-        // Existing records are not duplicated.
         foreach ($notificationIds as $notificationId) {
             $updatedCount += DB::table('notification_reads')
                 ->insertOrIgnore([
-                    'user_id' => $adminId,
+                    'user_id' => $userId,
                     'notification_id' => $notificationId,
-                    'read_at' => now(),
+                    'read_at' => $readAt,
                 ]);
         }
 
-        // Return the number of newly inserted read records.
         return response()->json([
             'success' => true,
             'message' => 'Notifications marked as read.',
@@ -219,39 +278,35 @@ class NotificationController extends Controller
 
     /**
      * PATCH /api/notifications/archive-all
-     * Archive all active notifications visible to this Admin.
+     *
+     * Archive all active notifications visible to this user.
      */
     public function archiveAll(Request $request)
     {
-        $adminId = $this->getAdminId($request);
+        $user = $this->getAuthorizedUser($request);
+        $userId = (int) $user->user_id;
 
-        // Find active notifications owned by this Admin
-        // or shared system-wide.
-        $notificationIds = Notification::query()
-            ->where(function ($query) use ($adminId) {
-                $query->where('user_id', $adminId)
-                      ->orWhereNull('user_id');
-            })
-            ->where(function ($query) {
-                $query->whereNull('expires_at')
-                      ->orWhere('expires_at', '>', now());
-            })
-            ->pluck('notification_id');
+        $query = Notification::query();
+
+        $this->applyNotificationVisibility($query, $user);
+        $this->applyActiveCondition($query);
+
+        $notificationIds = $query->pluck(
+            'notifications.notification_id'
+        );
 
         $archivedCount = 0;
+        $archivedAt = now();
 
-        // Store archive status for this Admin.
-        // Notifications remain in the notifications table.
         foreach ($notificationIds as $notificationId) {
             $archivedCount += DB::table('notification_archives')
                 ->insertOrIgnore([
-                    'user_id' => $adminId,
+                    'user_id' => $userId,
                     'notification_id' => $notificationId,
-                    'archived_at' => now(),
+                    'archived_at' => $archivedAt,
                 ]);
         }
 
-        // Return the number of newly archived records.
         return response()->json([
             'success' => true,
             'message' => 'Notifications archived successfully.',

@@ -4,6 +4,8 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use App\Models\FuelPurchaseOrder;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class TankRefill extends Model
 {
@@ -61,4 +63,13 @@ class TankRefill extends Model
             'user_id'
         );
     }
+
+    public function purchaseOrder(): BelongsTo
+{
+    return $this->belongsTo(
+        FuelPurchaseOrder::class,
+        'purchase_order_id',
+        'purchase_order_id'
+    );
+}
 }

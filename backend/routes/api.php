@@ -25,6 +25,8 @@ use App\Http\Controllers\ReportCacheController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\AuditLogController;
+use App\Http\Controllers\ShiftHandoverController;
+
 
 
 
@@ -54,6 +56,9 @@ Route::middleware('auth:sanctum')->group(function () {
         [ProfileController::class, 'changePassword']
     );
 
+
+
+
 });
 
 
@@ -68,6 +73,15 @@ Route::apiResource(
     'fuel-pumps',
     FuelPumpController::class
 );
+
+
+
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get(
+        'fuel-pumps-sales-today',
+        [FuelPumpController::class, 'salesToday']
+    );
+});
 
 
 // =====================================================
@@ -90,9 +104,11 @@ Route::middleware('auth:sanctum')->group(function () {
     // Fuel Purchase Orders
     // =========================================================
     Route::apiResource(
-        'purchase-orders',
-        FuelPurchaseOrderController::class
-    );
+    'purchase-orders',
+    FuelPurchaseOrderController::class
+)->parameters([
+    'purchase-orders' => 'fuel_purchase_order',
+]);
 
     // =========================================================
     // Store Sales
@@ -122,54 +138,22 @@ Route::apiResource('work-schedules', WorkScheduleController::class);
 // System Settings API
 Route::get('system-settings', [SystemSettingController::class, 'index']);
 Route::put('system-settings', [SystemSettingController::class, 'update']);
+
+// Fuel Sale History
+Route::get(
+    'fuel-sales',
+    [FuelSaleController::class, 'index']
+);
+
+Route::get(
+    'fuel-sales/{fuelSale}',
+    [FuelSaleController::class, 'show']
+);
 });
 
 
 
-Route::middleware('auth:sanctum')->group(function () {
 
-    // =========================================================
-    // Fuel Purchase Orders
-    // =========================================================
-    Route::apiResource(
-        'purchase-orders',
-        FuelPurchaseOrderController::class
-    );
-
-    // =========================================================
-    // Store Sales
-    // =========================================================
-    Route::get(
-        'store-sales',
-        [StoreSaleController::class, 'index']
-    );
-
-    Route::post(
-        'store-sales',
-        [StoreSaleController::class, 'store']
-    );
-
-    Route::get(
-        'store-sales/{storeSale}',
-        [StoreSaleController::class, 'show']
-    );
-
-    // =========================================================
-    // Fuel Sale History
-    // =========================================================
-
-    // Get Fuel Sales History
-    Route::get(
-        'fuel-sales',
-        [FuelSaleController::class, 'index']
-    );
-
-    // Get details of one Fuel Sale
-    Route::get(
-        'fuel-sales/{fuelSale}',
-        [FuelSaleController::class, 'show']
-    );
-});
 
 // =====================================================
 // SUPPLIER MANAGEMENT
@@ -560,5 +544,16 @@ Route::middleware('auth:sanctum')->group(function () {
 
 Route::get('/activity-logs', [AuditLogController::class, 'index']);
 
+// =====================================================
+// SHIFT HANDOVERS API
+// All routes require a valid Sanctum token.
+// =====================================================
+
+Route::middleware('auth:sanctum')->group(function () {
+    Route::apiResource(
+        'shift-handovers',
+        ShiftHandoverController::class
+    );
+});
 
 });
