@@ -62,7 +62,7 @@ const NAV_SECTIONS = [
             },
             {
                 key: "branch-reports",
-                label: "Branch Reports",
+                label: "Business Reports",
                 icon: ChartColumnBig
             },
             {

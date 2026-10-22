@@ -542,7 +542,17 @@ Route::middleware('auth:sanctum')->group(function () {
     );
 
 
-Route::get('/activity-logs', [AuditLogController::class, 'index']);
+    Route::get('/activity-logs', [AuditLogController::class, 'index']);
+
+    Route::patch(
+    '/notifications/{id}/unread',
+    [NotificationController::class, 'markAsUnread']
+);
+
+Route::patch(
+    '/notifications/{id}/archive',
+    [NotificationController::class, 'archiveOne']
+);
 
 // =====================================================
 // SHIFT HANDOVERS API
@@ -555,5 +565,7 @@ Route::middleware('auth:sanctum')->group(function () {
         ShiftHandoverController::class
     );
 });
+
+
 
 });

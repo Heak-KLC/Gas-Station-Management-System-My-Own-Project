@@ -15,16 +15,17 @@ class ReportCacheController extends Controller
      * GET /api/reports
      */
     public function index()
-    {
-        $reports = ReportCache::with('generatedBy')
-            ->orderByDesc('generated_date')
-            ->get();
+{
+    $reports = ReportCache::with('generatedBy')
+        ->orderByDesc('generated_date')
+        ->get()
+        ->map(fn ($report) => $this->formatReport($report));
 
-        return response()->json([
-            'success' => true,
-            'data' => $reports,
-        ]);
-    }
+    return response()->json([
+        'success' => true,
+        'data' => $reports,
+    ]);
+}
 
     /**
      * បង្កើត និងរក្សាទុក Report ថ្មី
@@ -33,40 +34,40 @@ class ReportCacheController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'report_type' => [
-                'required',
-                Rule::in([
-                    'daily_fuel_sales',
-                    'monthly_revenue',
-                    'fuel_inventory',
-                    'fuel_purchase',
-                    'customer',
-                    'supplier',
-                    'employee',
-                    'store_sales',
-                    'profit_loss',
-                    'equipment_maintenance',
-                ]),
-            ],
+    'report_type' => [
+        'required',
+        Rule::in([
+            'daily_fuel_sales',
+            'monthly_revenue',
+            'fuel_inventory',
+            'fuel_purchase',
+            'customer',
+            'supplier',
+            'employee',
+            'store_sales',
+            'profit_loss',
+            'equipment_maintenance',
+        ]),
+    ],
+    'report_data' => 'required|array',
+    'parameters' => 'nullable|array',
+]);
 
-            'report_data' => 'required|array',
-            'parameters' => 'nullable|array',
-            'generated_by' => 'nullable|integer|exists:users,user_id',
-        ]);
+$report = ReportCache::create([
+    'report_type' => $validated['report_type'],
+    'report_data' => $validated['report_data'],
+    'parameters' => $validated['parameters'] ?? [],
+    'generated_by' => $request->user()->user_id,
+    'generated_date' => now(),
+]);
 
-        $report = ReportCache::create([
-            'report_type' => $validated['report_type'],
-            'report_data' => $validated['report_data'],
-            'parameters' => $validated['parameters'] ?? [],
-            'generated_by' => $validated['generated_by'] ?? null,
-            'generated_date' => now(),
-        ]);
+$report->load('generatedBy');
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Report saved successfully.',
-            'data' => $report->load('generatedBy'),
-        ], 201);
+return response()->json([
+    'success' => true,
+    'message' => 'Report saved successfully.',
+    'data' => $this->formatReport($report),
+], 201);
     }
 
     /**
@@ -361,6 +362,27 @@ public function storeCategories()
         'success' => true,
         'data' => $data,
     ]);
+}
+
+private function formatReport($report)
+{
+    return [
+        'report_id' => $report->report_id,
+        'report_type' => $report->report_type,
+        'report_data' => $report->report_data,
+        'parameters' => $report->parameters,
+        'generated_date' => $report->generated_date,
+
+        // Keep the original foreign key separate
+        // from the generated user information.
+        'generated_by' => $report->getRawOriginal('generated_by'),
+
+        'generated_by_name' =>
+            $report->generatedBy?->full_name,
+
+        'generated_by_role' =>
+            $report->generatedBy?->role,
+    ];
 }
 
 

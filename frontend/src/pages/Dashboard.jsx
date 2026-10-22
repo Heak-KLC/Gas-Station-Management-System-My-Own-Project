@@ -233,20 +233,26 @@ function FuelAlertRow({ tank, note, status }) {
 // Tank Battery
 // ======================================================
 
-function TankBattery({ pump, pct, status }) {
-  const isHigh = status === "In Stock";
 
-  const theme = isHigh
-    ? {
-        pill: "bg-emerald-50 text-emerald-600",
-        from: "#34d399",
-        to: "#059669",
-      }
-    : {
-        pill: "bg-rose-50 text-rose-500",
-        from: "#fb7185",
-        to: "#e11d48",
-      };
+function TankBattery({ pump, pct, status }) {
+  const theme =
+    status === "In Stock"
+      ? {
+          pill: "bg-emerald-50 text-emerald-600",
+          from: "#34d399",
+          to: "#059669",
+        }
+      : status === "Critical Stock"
+        ? {
+            pill: "bg-rose-50 text-rose-600",
+            from: "#fb7185",
+            to: "#e11d48",
+          }
+        : {
+            pill: "bg-amber-50 text-amber-700",
+            from: "#fbbf24",
+            to: "#d97706",
+          };
 
   return (
     <div className="flex flex-col items-center gap-1.5">
@@ -269,7 +275,7 @@ function TankBattery({ pump, pct, status }) {
 
         <div className="absolute inset-0 flex items-center justify-center">
           <span
-            className="text-[10px] font-bold drop-shadow-sm"
+            className="text-[10px] font-bold"
             style={{
               color: pct > 45 ? "#ffffff" : "#334155",
             }}
@@ -285,6 +291,7 @@ function TankBattery({ pump, pct, status }) {
     </div>
   );
 }
+
 
 // ======================================================
 // Dashboard
@@ -456,58 +463,74 @@ export default function Dashboard() {
   // Calculated tank levels
   // ----------------------------------------------------
 
-  const tankLevels = useMemo(() => {
-    return tanks.map((tank) => {
-      const capacity = Number(tank.capacity || 0);
-      const currentVolume = Number(tank.current_volume || 0);
+  
+const tankLevels = useMemo(() => {
+  return tanks.map((tank) => {
+    const capacity = Number(tank.capacity ?? 0);
+    const currentVolume = Number(tank.current_volume ?? 0);
+    const minVolume = Number(tank.min_volume ?? 0);
 
-      const pct =
-        capacity > 0
-          ? Math.min(100, Math.max(0, (currentVolume / capacity) * 100))
-          : 0;
+    const pct =
+      capacity > 0
+        ? Math.min(
+            100,
+            Math.max(0, (currentVolume / capacity) * 100)
+          )
+        : 0;
 
-      const isLow =
-        currentVolume <= Number(tank.min_volume || 0);
+    // Critical: fuel is at or below 10% of tank capacity.
+    const isCritical = capacity > 0 && pct <= 10;
 
-      const fuel = fuelTypes.find(
-        (item) => Number(item.fuel_id) === Number(tank.fuel_id)
-      );
+    // Low: fuel is at/below configured minimum
+    // OR at/below 20% of tank capacity.
+    const isLow =
+      isCritical ||
+      currentVolume <= minVolume ||
+      (capacity > 0 && pct <= 20);
 
-      return {
-        id: tank.tank_id,
-        pump: tank.tank_number || `Tank ${tank.tank_id}`,
-        pct,
-        status: isLow ? "Low Stock" : "In Stock",
-        fuelName: fuel?.fuel_name || "Unknown fuel",
-        currentVolume,
-        capacity,
-        minVolume: Number(tank.min_volume || 0),
-        tankStatus: tank.status,
-      };
-    });
-  }, [tanks, fuelTypes]);
+    const fuel = fuelTypes.find(
+      (item) =>
+        Number(item.fuel_id) === Number(tank.fuel_id)
+    );
+
+    return {
+      id: tank.tank_id,
+      pump: tank.tank_number || `Tank ${tank.tank_id}`,
+      pct,
+      status: isCritical
+        ? "Critical Stock"
+        : isLow
+          ? "Low Stock"
+          : "In Stock",
+      fuelName: fuel?.fuel_name || "Unknown fuel",
+      currentVolume,
+      capacity,
+      minVolume,
+      tankStatus: String(tank.status ?? "").toLowerCase(),
+    };
+  });
+}, [tanks, fuelTypes]);
+
 
   // ----------------------------------------------------
   // Low fuel alerts
   // ----------------------------------------------------
 
-  const lowFuelAlerts = useMemo(() => {
-    return tankLevels
-      .filter(
-        (tank) =>
-          tank.currentVolume <= tank.minVolume &&
-          tank.tankStatus !== "inactive"
-      )
-      .map((tank) => ({
-        tank: `${tank.pump} - ${tank.fuelName}`,
-        note: `${formatNumber(tank.currentVolume)} L remaining of ${formatNumber(tank.capacity)} L capacity`,
-        status:
-          tank.capacity > 0 &&
-          tank.currentVolume / tank.capacity <= 0.1
-            ? "Critical Stock"
-            : "Low Stock",
-      }));
-  }, [tankLevels]);
+  
+const lowFuelAlerts = useMemo(() => {
+  return tankLevels
+    .filter(
+      (tank) =>
+        tank.status !== "In Stock" &&
+        tank.tankStatus !== "inactive"
+    )
+    .map((tank) => ({
+      tank: `${tank.pump} - ${tank.fuelName}`,
+      note: `${formatNumber(tank.currentVolume)} L remaining of ${formatNumber(tank.capacity)} L capacity`,
+      status: tank.status,
+    }));
+}, [tankLevels]);
+
 
   // ----------------------------------------------------
   // Fuel sales by type

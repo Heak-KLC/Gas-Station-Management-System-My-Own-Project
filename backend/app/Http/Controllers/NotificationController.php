@@ -313,4 +313,65 @@ class NotificationController extends Controller
             'archived_count' => $archivedCount,
         ]);
     }
+
+    /**
+ * PATCH /api/notifications/{id}/unread
+ */
+public function markAsUnread(Request $request, $id)
+{
+    $user = $this->getAuthorizedUser($request);
+    $userId = (int) $user->user_id;
+
+    $query = Notification::query()
+        ->where('notifications.notification_id', $id);
+
+    $this->applyNotificationVisibility($query, $user);
+    $this->applyActiveCondition($query);
+
+    $notification = $query->firstOrFail();
+
+    DB::table('notification_reads')
+        ->where('user_id', $userId)
+        ->where('notification_id', $notification->notification_id)
+        ->delete();
+
+    return response()->json([
+        'success' => true,
+        'message' => 'Notification marked as unread.',
+        'data' => [
+            'notification_id' => $notification->notification_id,
+            'is_read' => false,
+        ],
+    ]);
+}
+
+/**
+ * PATCH /api/notifications/{id}/archive
+ */
+public function archiveOne(Request $request, $id)
+{
+    $user = $this->getAuthorizedUser($request);
+    $userId = (int) $user->user_id;
+
+    $query = Notification::query()
+        ->where('notifications.notification_id', $id);
+
+    $this->applyNotificationVisibility($query, $user);
+
+    $notification = $query->firstOrFail();
+
+    DB::table('notification_archives')->insertOrIgnore([
+        'user_id' => $userId,
+        'notification_id' => $notification->notification_id,
+        'archived_at' => now(),
+    ]);
+
+    return response()->json([
+        'success' => true,
+        'message' => 'Notification archived successfully.',
+        'data' => [
+            'notification_id' => $notification->notification_id,
+        ],
+    ]);
+}
 }

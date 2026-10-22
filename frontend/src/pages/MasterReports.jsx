@@ -113,10 +113,13 @@ const mapReport = (item) => {
     period: parameters.period || "All Time",
     location: parameters.location || "All Stations",
     by:
-      generatedBy?.full_name ||
-      generatedBy?.username ||
-      parameters.author ||
-      "Unknown",
+  item.generated_by_name ||
+  generatedBy?.full_name ||
+  generatedBy?.username ||
+  parameters.author ||
+  "Unknown",
+
+role: item.generated_by_role || generatedBy?.role || "",
     date: item.generated_date
       ? String(item.generated_date).slice(0, 10)
       : "",
@@ -977,8 +980,13 @@ export default function MasterReports() {
                         </td>
 
                         <td className="px-3.5 py-2.5 font-medium text-slate-600">
-                          {report.by}
-                        </td>
+  <div>{report.by}</div>
+  {report.role && (
+    <div className="text-[10px] text-slate-400">
+      {report.role}
+    </div>
+  )}
+</td>
 
                         <td className="px-3.5 py-2.5 text-slate-500">
                           {report.date}
