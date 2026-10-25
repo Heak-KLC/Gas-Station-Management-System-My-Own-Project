@@ -104,6 +104,11 @@ export default function Loyalty() {
 
         if (cancelled) return;
 
+        console.log("Customer API data:", customerList);
+console.log("First customer:", customerList[0]);
+
+setCustomers(customerList);
+
         setCustomers(customerList);
 
         setSelectedCustomer((current) => {
@@ -467,7 +472,10 @@ formatMoney(customer.totalSpent),
               <div className="flex justify-between gap-3">
                 <dt className="font-medium text-slate-400">Total Purchases</dt>
                 <dd className="font-bold text-slate-700">
-                  {displayValue(selectedCustomer.total_purchases)}
+                  {displayValue(
+  selectedCustomer.total_purchases ??
+  selectedCustomer.totalPurchases
+)}
                 </dd>
               </div>
 

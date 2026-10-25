@@ -35,6 +35,7 @@ import MgrAttendance from "./pages/manager/Attendance";
 import MgrMaintenance from "./pages/manager/Maintenance";
 import MgrBranchReports from "./pages/manager/BranchReports";
 import MgrNotifications from "./pages/manager/Notifications";
+import MgrRefundManagement from "./pages/manager/RefundManagement";
 
 // ---------- Cashier pages ----------
 import CashDashboard from "./pages/cashier/Dashboard";
@@ -168,6 +169,11 @@ const ROLES = {
         title: "Suppliers",
         Component: MgrSuppliers,
       },
+
+      "refund-management": {
+  title: "Refund Management",
+  Component: MgrRefundManagement,
+},
 
       "shift-handovers": {
         title: "Shift Handovers",

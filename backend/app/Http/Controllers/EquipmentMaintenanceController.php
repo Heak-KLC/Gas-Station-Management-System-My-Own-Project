@@ -6,6 +6,7 @@ use App\Models\EquipmentMaintenance;
 use App\Models\AuditLog;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use App\Models\Notification;
 
 class EquipmentMaintenanceController extends Controller
 {
@@ -40,61 +41,115 @@ class EquipmentMaintenanceController extends Controller
         ]);
     }
 
-    /**
-     * POST /api/equipment-maintenance
-     * Create a maintenance record and audit log.
-     */
-    public function store(Request $request)
-    {
-        // Validate input against the database enum values.
-        $validated = $request->validate([
-            'equipment_type' => [
-                'required',
-                'in:pump,tank,dispenser,security_system,generator,other',
-            ],
-            'equipment_id' => 'required|integer|min:1',
-            'scheduled_date' => 'required|date',
-            'performed_date' => 'nullable|date',
-            'maintenance_type' => [
-                'required',
-                'in:routine,repair,inspection,emergency',
-            ],
-            'description' => 'nullable|string',
-            'cost' => 'nullable|numeric|min:0',
-            'status' => [
-                'sometimes',
-                'nullable',
-                'in:scheduled,in_progress,completed,cancelled',
-            ],
-            'performed_by' => 'nullable|integer|exists:employees,employee_id',
-            'notes' => 'nullable|string',
-        ]);
+    
 
-        // Create the maintenance record and audit log atomically.
-        $record = DB::transaction(function () use (
+/**
+ * POST /api/equipment-maintenance
+ * Create maintenance record, update pump status,
+ * record audit log, and notify the relevant users.
+ */
+public function store(Request $request)
+{
+    $validated = $request->validate([
+        'equipment_type' => [
+            'required',
+            'in:pump,tank,dispenser,security_system,generator,other',
+        ],
+        'equipment_id' => $request->input('equipment_type') === 'pump'
+            ? 'required|integer|min:1|exists:fuel_pumps,pump_id'
+            : 'required|integer|min:1',
+        'scheduled_date' => 'required|date',
+        'performed_date' => 'nullable|date',
+        'maintenance_type' => [
+            'required',
+            'in:routine,repair,inspection,emergency',
+        ],
+        'description' => 'nullable|string',
+        'cost' => 'nullable|numeric|min:0',
+        'status' => [
+            'sometimes',
+            'nullable',
+            'in:scheduled,in_progress,completed,cancelled',
+        ],
+        'performed_by' => 'nullable|integer|exists:employees,employee_id',
+        'notes' => 'nullable|string',
+    ]);
+
+    $record = DB::transaction(function () use (
+        $request,
+        $validated
+    ) {
+        // 1. Create the maintenance record.
+        $record = EquipmentMaintenance::create($validated);
+
+        // 2. Update the pump status when the issue concerns a pump.
+        if ($validated['equipment_type'] === 'pump') {
+            DB::table('fuel_pumps')
+                ->where('pump_id', $validated['equipment_id'])
+                ->update([
+                    'status' => 'under_maintenance',
+                    'updated_at' => now(),
+                ]);
+        }
+
+        // 3. Record the audit log.
+        $this->recordAuditLog(
             $request,
-            $validated
-        ) {
-            $record = EquipmentMaintenance::create($validated);
+            'CREATE',
+            $record->maintenance_id,
+            null,
+            $this->getMaintenanceAuditValues($record)
+        );
 
-            // Record the newly created maintenance information.
-            $this->recordAuditLog(
-                $request,
-                'CREATE',
-                $record->maintenance_id,
-                null,
-                $this->getMaintenanceAuditValues($record)
-            );
 
-            return $record;
-        });
+        // 4. Find all Manager accounts.
+        $managerIds = DB::table('users')
+            ->whereRaw('LOWER(TRIM(role)) = ?', ['manager'])
+            ->pluck('user_id');
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Maintenance record created successfully.',
-            'data' => $record->load('performedBy'),
-        ], 201);
-    }
+        // 5. Get the authenticated user who reported the issue.
+        $reporter = $request->user();
+
+        // 6. Send a personal notification to each Manager
+        // and to the reporting user.
+        $recipientIds = $managerIds
+            ->merge(
+                $reporter ? [$reporter->user_id] : []
+            )
+            ->unique()
+            ->values();
+
+        foreach ($recipientIds as $recipientId) {
+            Notification::create([
+                'user_id' => $recipientId,
+                'notification_type' => 'maintenance_reminder',
+                'title' => 'New Equipment Issue Reported',
+                'message' => sprintf(
+                    'A %s issue has been reported for equipment ID %s. Type: %s. Description: %s',
+                    $validated['equipment_type'],
+                    $validated['equipment_id'],
+                    $validated['maintenance_type'],
+                    $validated['description'] ?? 'No description provided'
+                ),
+                'reference_id' => $record->maintenance_id,
+                'is_read' => 0,
+                'expires_at' => null,
+            ]);
+        }
+
+
+
+        return $record;
+    });
+
+    return response()->json([
+        'success' => true,
+        'message' => 'Issue reported successfully. Pump status updated to Maintenance and notifications created.',
+        'data' => $record->load('performedBy'),
+    ], 201);
+}
+
+
 
     /**
      * GET /api/equipment-maintenance/{equipment_maintenance}
@@ -115,67 +170,164 @@ class EquipmentMaintenanceController extends Controller
      * PUT/PATCH /api/equipment-maintenance/{equipment_maintenance}
      * Update a maintenance record and audit the changes.
      */
-    public function update(Request $request, $id)
-    {
-        $record = EquipmentMaintenance::findOrFail($id);
+    
+/**
+ * PUT/PATCH /api/equipment-maintenance/{equipment_maintenance}
+ * Update a maintenance record, save the audit log,
+ * and notify the original reporter when a Manager responds.
+ */
+public function update(Request $request, $id)
+{
+    $record = EquipmentMaintenance::findOrFail($id);
 
-        // Validate only the fields supplied for this update.
-        $validated = $request->validate([
-            'equipment_type' => [
-                'sometimes',
-                'required',
-                'in:pump,tank,dispenser,security_system,generator,other',
-            ],
-            'equipment_id' => 'sometimes|required|integer|min:1',
-            'scheduled_date' => 'sometimes|required|date',
-            'performed_date' => 'sometimes|nullable|date',
-            'maintenance_type' => [
-                'sometimes',
-                'required',
-                'in:routine,repair,inspection,emergency',
-            ],
-            'description' => 'sometimes|nullable|string',
-            'cost' => 'sometimes|nullable|numeric|min:0',
-            'status' => [
-                'sometimes',
-                'nullable',
-                'in:scheduled,in_progress,completed,cancelled',
-            ],
-            'performed_by' => 'sometimes|nullable|integer|exists:employees,employee_id',
-            'notes' => 'sometimes|nullable|string',
-        ]);
+    $validated = $request->validate([
+        'equipment_type' => [
+            'sometimes',
+            'required',
+            'in:pump,tank,dispenser,security_system,generator,other',
+        ],
+        'equipment_id' => 'sometimes|required|integer|min:1',
+        'scheduled_date' => 'sometimes|required|date',
+        'performed_date' => 'sometimes|nullable|date',
+        'maintenance_type' => [
+            'sometimes',
+            'required',
+            'in:routine,repair,inspection,emergency',
+        ],
+        'description' => 'sometimes|nullable|string',
+        'cost' => 'sometimes|nullable|numeric|min:0',
+        'status' => [
+            'sometimes',
+            'nullable',
+            'in:scheduled,in_progress,completed,cancelled',
+        ],
+        'performed_by' => 'sometimes|nullable|integer|exists:employees,employee_id',
+        'notes' => 'sometimes|nullable|string',
+    ]);
 
-        // Capture the existing values before making changes.
-        $oldValues = $this->getMaintenanceAuditValues($record);
+    $oldValues = $this->getMaintenanceAuditValues($record);
 
-        // Update the record and audit log in the same transaction.
-        $updatedRecord = DB::transaction(function () use (
+    $updatedRecord = DB::transaction(function () use (
+        $request,
+        $record,
+        $validated,
+        $oldValues
+    ) {
+        // 1. Keep the previous response before updating.
+        $oldNotes = trim((string) ($record->notes ?? ''));
+
+        // 2. Update and reload the maintenance record.
+        $record->update($validated);
+        $record->refresh();
+
+        // 3. Record the maintenance update in the audit log.
+        $this->recordAuditLog(
             $request,
-            $record,
-            $validated,
-            $oldValues
+            'UPDATE',
+            $record->maintenance_id,
+            $oldValues,
+            $this->getMaintenanceAuditValues($record)
+        );
+
+
+            
+        // 4. Restore the pump when a completed maintenance
+        // update is submitted.
+        if (
+            $record->equipment_type === 'pump' &&
+            array_key_exists('status', $validated) &&
+            $record->status === 'completed'
         ) {
-            $record->update($validated);
-            $record->refresh();
+            $pump = DB::table('fuel_pumps')
+                ->where('pump_id', $record->equipment_id)
+                ->where('status', 'under_maintenance')
+                ->lockForUpdate()
+                ->first();
 
-            // Save both the old and updated maintenance values.
-            $this->recordAuditLog(
-                $request,
-                'UPDATE',
-                $record->maintenance_id,
-                $oldValues,
-                $this->getMaintenanceAuditValues($record)
-            );
+            if ($pump) {
+                DB::table('fuel_pumps')
+                    ->where('pump_id', $record->equipment_id)
+                    ->where('status', 'under_maintenance')
+                    ->update([
+                        'status' => 'available',
+                        'updated_at' => now(),
+                    ]);
 
-            return $record;
-        });
+                AuditLog::create([
+                    'user_id' => $request->user()?->user_id,
+                    'action' => 'UPDATE',
+                    'entity_type' => 'FuelPump',
+                    'entity_id' => $record->equipment_id,
+                    'old_value' => json_encode([
+                        'status' => 'under_maintenance',
+                    ]),
+                    'new_value' => json_encode([
+                        'status' => 'available',
+                    ]),
+                    'ip_address' => $request->ip(),
+                ]);
+            }
+        }
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Maintenance record updated successfully.',
-            'data' => $updatedRecord->load('performedBy'),
-        ]);
-    }
+
+
+        // 4. Identify the authenticated user.
+        $user = $request->user();
+
+        $isManager = $user
+            && strtolower(trim((string) $user->role)) === 'manager';
+
+        $newResponse = trim((string) ($record->notes ?? ''));
+
+        // 5. Notify the original reporter only when a Manager
+        // changes the response to a non-empty value.
+        $responseChanged = array_key_exists('notes', $validated)
+            && $newResponse !== ''
+            && $newResponse !== $oldNotes;
+
+        if ($isManager && $responseChanged) {
+            // Find the user who created the original report.
+            $reporterId = AuditLog::where(
+                'entity_type',
+                'EquipmentMaintenance'
+            )
+                ->where('entity_id', $record->maintenance_id)
+                ->where('action', 'CREATE')
+                ->whereNotNull('user_id')
+                ->orderBy('created_at')
+                ->value('user_id');
+
+            // Do not notify the Manager who submitted the response.
+            if (
+                $reporterId
+                && (int) $reporterId !== (int) $user->user_id
+            ) {
+                Notification::create([
+                    'user_id' => $reporterId,
+                    'notification_type' => 'maintenance_reminder',
+                    'title' => 'Manager Responded to Equipment Issue',
+                    'message' => sprintf(
+                        'The Manager has responded to your equipment issue (Maintenance ID: %d). Response: %s',
+                        $record->maintenance_id,
+                        $newResponse
+                    ),
+                    'reference_id' => $record->maintenance_id,
+                    'is_read' => 0,
+                    'expires_at' => null,
+                ]);
+            }
+        }
+
+        return $record;
+    });
+
+    return response()->json([
+        'success' => true,
+        'message' => 'Maintenance record updated successfully.',
+        'data' => $updatedRecord->load('performedBy'),
+    ]);
+}
+
 
     /**
      * DELETE /api/equipment-maintenance/{equipment_maintenance}

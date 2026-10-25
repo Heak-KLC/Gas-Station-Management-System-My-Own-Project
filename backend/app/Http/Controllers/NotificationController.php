@@ -13,18 +13,21 @@ class NotificationController extends Controller
      * Allow Admin and Manager to access notifications.
      */
     private function getAuthorizedUser(Request $request)
-    {
-        $user = $request->user();
+{
+    $user = $request->user();
 
-        // Only Admin and Manager can access this controller.
-        abort_unless(
-            $user && in_array($user->role, ['admin', 'manager'], true),
-            403,
-            'You are not authorized to access notifications.'
-        );
+    abort_unless(
+        $user && in_array(
+            strtolower(trim($user->role)),
+            ['admin', 'manager', 'fuel_attendant'],
+            true
+        ),
+        403,
+        'You are not authorized to access notifications.'
+    );
 
-        return $user;
-    }
+    return $user;
+}
 
     /**
      * Apply notification visibility rules according to user role.
@@ -48,6 +51,15 @@ class NotificationController extends Controller
             'maintenance_reminder',
             'delivery_reminder',
         ];
+
+$normalizedRole = strtolower(trim($user->role));
+
+if ($normalizedRole === 'fuel_attendant') {
+    return $query->where(
+        'notifications.user_id',
+        (int) $user->user_id
+    );
+}
 
         return $query->where(function ($q) use (
             $user,

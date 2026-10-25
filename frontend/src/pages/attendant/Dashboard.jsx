@@ -729,7 +729,7 @@ const handleReportSubmit = async (event) => {
   // ---------------------------------------------------
 
   return (
-    <div className="space-y-4 bg-slate-200 p-6 font-sans text-slate-800">
+    <div className="space-y-4 bg-slate-300 p-6 -m-6 font-sans text-slate-800">
       {/* Toast */}
       {toast.message && (
         <div

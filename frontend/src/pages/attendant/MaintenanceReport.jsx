@@ -665,7 +665,7 @@ export default function MaintenanceReport() {
   };
 
   return (
-    <div className="space-y-4 bg-slate-200 p-6">
+    <div className="space-y-4 bg-slate-300 p-6 -m-6">
       <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-2xl font-bold text-slate-900">

@@ -79,17 +79,32 @@ function isPumpUnavailable(pump) {
   );
 }
 
+
+function getFuelName(record) {
+  const fuel =
+    record?.fuel_type ??
+    record?.fuelType ??
+    record?.fuel ??
+    {};
+
+  return (
+    fuel.name ||
+    fuel.fuel_name ||
+    fuel.fuel_type ||
+    fuel.name_en ||
+    fuel.fuel_type_name ||
+    "Unknown Fuel"
+  );
+}
+
+
+
+
 function mapPump(pump) {
   return {
     id: pump.pump_id,
     pumpNumber: pump.pump_number || `Pump ${pump.pump_id}`,
-    fuelType:
-      pump.fuel_type?.name ||
-      pump.fuel_type?.fuel_name ||
-      pump.fuelType?.name ||
-      pump.fuelType?.fuel_name ||
-      pump.fuelType?.fuel_type ||
-      `Fuel ID ${pump.fuel_id}`,
+    fuelType: getFuelName(pump),
     fuelId: Number(pump.fuel_id),
     status: getPumpStatus(pump.status),
     prev: Number(pump.meter_reading ?? 0),
@@ -101,24 +116,27 @@ function mapSale(sale) {
   return {
     id: sale.sale_id,
     saleNumber: sale.sale_number || `SALE-${sale.sale_id}`,
+
     pump:
       sale.pump?.pump_number ||
+      sale.pump?.pump_number ||
       (sale.pump_id ? `Pump ${sale.pump_id}` : "—"),
-    fuel:
-      sale.fuelType?.name ||
-      sale.fuelType?.fuel_name ||
-      sale.fuelType?.fuel_type ||
-      `Fuel ID ${sale.fuel_id}`,
+
+    // Laravel API may return the relationship as fuel_type.
+    fuel: getFuelName(sale),
+
     liters: Number(sale.quantity ?? 0),
     amount: Number(sale.total_amount ?? 0),
     time: sale.sale_date,
+
     attendant:
-  sale.soldBy?.full_name ||
-  sale.sold_by?.full_name ||
-  sale.seller?.full_name ||
-  sale.attendant?.full_name ||
-  sale.sold_by_name ||
-  "—",
+      sale.soldBy?.full_name ||
+      sale.sold_by?.full_name ||
+      sale.seller?.full_name ||
+      sale.attendant?.full_name ||
+      sale.sold_by_name ||
+      "—",
+
     status: sale.payment_status || "Recorded",
   };
 }
@@ -364,7 +382,7 @@ export default function MeterInput() {
   };
 
   return (
-    <div className="min-h-screen space-y-6 bg-slate-200 p-6 font-sans text-slate-800">
+    <div className="min-h-screen space-y-6 bg-slate-300 p-6 -m-6 font-sans text-slate-800">
       {toastMessage && (
         <div
           role="status"

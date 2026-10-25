@@ -567,7 +567,7 @@ export default function MyStation() {
   };
 
   return (
-    <div className="min-h-screen space-y-5 bg-slate-200 p-6 font-sans text-slate-800">
+    <div className="min-h-screen space-y-5 bg-slate-300 p-6 -m-6 font-sans text-slate-800">
       {toast && (
         <div
           role="status"

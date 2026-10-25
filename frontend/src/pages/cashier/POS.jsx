@@ -108,6 +108,10 @@ function getFuelStyle(category) {
 
 export default function POS() {
   // API data
+  const [customers, setCustomers] = useState([]);
+const [customerSearch, setCustomerSearch] = useState('');
+const [selectedCustomerId, setSelectedCustomerId] = useState('');
+const [loadingCustomers, setLoadingCustomers] = useState(false);
   const [fuels, setFuels] = useState([]);
   const [pumps, setPumps] = useState([]);
   const [loadingOptions, setLoadingOptions] = useState(true);
@@ -207,6 +211,55 @@ export default function POS() {
     }
   }, [triggerToast]);
 
+
+  // Load customers for Fuel Sale only.
+const loadCustomers = useCallback(async () => {
+  if (!getToken()) return;
+
+  setLoadingCustomers(true);
+
+  try {
+    const response = await fetch(`${API_URL}/customers`, {
+      headers: getHeaders(),
+    });
+
+    const result = await readResponse(response);
+
+    const rows = getRows(result);
+
+    setCustomers(
+      rows
+        .filter((customer) => {
+          const active = customer.is_active;
+
+          return active === undefined ||
+            active === null ||
+            active === 1 ||
+            active === true ||
+            active === '1';
+        })
+        .map((customer) => ({
+          id: Number(customer.customer_id),
+          code: customer.customer_code || '',
+          name: customer.full_name || '',
+          phone: customer.phone || '',
+          membership: customer.loyalty_membership || 'none',
+          points: Number(customer.loyalty_points || 0),
+        }))
+    );
+  } catch (error) {
+    triggerToast(
+      error.message || 'Unable to load customers.'
+    );
+  } finally {
+    setLoadingCustomers(false);
+  }
+}, [triggerToast]);
+
+useEffect(() => {
+  loadCustomers();
+}, [loadCustomers]);
+
   useEffect(() => {
     loadPOSOptions();
   }, [loadPOSOptions]);
@@ -265,16 +318,40 @@ export default function POS() {
 
   const receivedAmount = Math.max(0, Number.parseFloat(receivedInput) || 0);
   const change = Math.max(0, receivedAmount - totalAmount);
+  const filteredCustomers = useMemo(() => {
+  const keyword = customerSearch.trim().toLowerCase();
+
+  if (!keyword) return customers;
+
+  return customers.filter((customer) =>
+    customer.name.toLowerCase().includes(keyword) ||
+    customer.code.toLowerCase().includes(keyword) ||
+    customer.phone.toLowerCase().includes(keyword)
+  );
+}, [customers, customerSearch]);
+
+const selectedCustomer = useMemo(
+  () =>
+    customers.find(
+      (customer) =>
+        String(customer.id) === String(selectedCustomerId)
+    ) || null,
+  [customers, selectedCustomerId]
+);
 
   // Reset the current sale form.
-  const handleNewSale = () => {
-    setCartItems([]);
-    setAmountInput('');
-    setReceivedInput('');
-    setNote('');
-    setActiveFocus('amount');
-    triggerToast('Started a new sale.');
-  };
+  
+const handleNewSale = () => {
+  setCartItems([]);
+  setAmountInput('');
+  setReceivedInput('');
+  setNote('');
+  setSelectedCustomerId('');
+  setCustomerSearch('');
+  setActiveFocus('amount');
+  triggerToast('Started a new sale.');
+};
+
 
   // Add current fuel selection to the cart.
   const handleAddFuelToCart = (overrideAmount) => {
@@ -411,14 +488,17 @@ export default function POS() {
       return;
     }
 
-    const record = {
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      time: new Date().toLocaleTimeString(),
-      items: itemsToHold,
-      totalAmount: itemsToHold.reduce((sum, item) => sum + item.amount, 0),
-      note,
-      paymentMethod,
-    };
+    
+const record = {
+  id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+  time: new Date().toLocaleTimeString(),
+  items: itemsToHold,
+  totalAmount: itemsToHold.reduce((sum, item) => sum + item.amount, 0),
+  note,
+  paymentMethod,
+  customerId: selectedCustomerId,
+};
+
 
     setHeldSales((previous) => [...previous, record]);
     setCartItems([]);
@@ -430,18 +510,25 @@ export default function POS() {
     triggerToast('Sale held successfully.');
   };
 
-  const handleRestoreHeldSale = (record) => {
-    setCartItems(record.items);
-    setAmountInput('');
-    setReceivedInput('');
-    setNote(record.note || '');
-    setPaymentMethod(record.paymentMethod || 'Cash');
-    setHeldSales((previous) =>
-      previous.filter((item) => item.id !== record.id)
-    );
-    setActiveModal(null);
-    triggerToast('Held sale restored.');
-  };
+  
+const handleRestoreHeldSale = (record) => {
+  setCartItems(record.items);
+  setAmountInput('');
+  setReceivedInput('');
+  setNote(record.note || '');
+  setPaymentMethod(record.paymentMethod || 'Cash');
+
+  // Restore the Customer Loyalty selection
+  setSelectedCustomerId(record.customerId || '');
+
+  setHeldSales((previous) =>
+    previous.filter((item) => item.id !== record.id)
+  );
+
+  setActiveModal(null);
+  triggerToast('Held sale restored.');
+};
+
 
   const handleCancelSale = () => {
     if (
@@ -521,13 +608,16 @@ export default function POS() {
         method: 'POST',
         headers: getHeaders(true),
         body: JSON.stringify({
-          items: cartItems.map((item) => ({
-            fuel_id: item.fuelId,
-            pump_id: item.pumpId,
-            quantity: Number(item.liters.toFixed(3)),
-          })),
-          payment_method: PAYMENT_API_VALUES[paymentMethod],
-        }),
+  items: cartItems.map((item) => ({
+    fuel_id: item.fuelId,
+    pump_id: item.pumpId,
+    quantity: Number(item.liters.toFixed(3)),
+  })),
+  payment_method: PAYMENT_API_VALUES[paymentMethod],
+  customer_id: selectedCustomerId
+    ? Number(selectedCustomerId)
+    : null,
+}),
       });
 
       const result = await readResponse(response);
@@ -920,6 +1010,99 @@ if (saleMode === "store") {
 
         {/* RIGHT SECTION */}
         <div className="lg:col-span-4 space-y-4">
+
+          
+{/* Customer Loyalty - Fuel Sale only */}
+<div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 space-y-3">
+  <div className="flex items-center justify-between gap-2">
+    <div>
+      <h4 className="font-bold text-xs uppercase text-slate-500 tracking-wider">
+        Customer Loyalty
+      </h4>
+      <p className="text-xs text-slate-400 mt-1">
+        Optional — select a customer for this fuel sale.
+      </p>
+    </div>
+
+    <button
+      type="button"
+      onClick={loadCustomers}
+      disabled={loadingCustomers}
+      className="text-xs font-bold text-blue-600 hover:text-blue-800 disabled:opacity-50"
+    >
+      {loadingCustomers ? 'Loading...' : 'Refresh'}
+    </button>
+  </div>
+
+  <input
+    type="text"
+    value={customerSearch}
+    onChange={(event) => setCustomerSearch(event.target.value)}
+    placeholder="Search customer code, name or phone..."
+    className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+  />
+
+  <select
+    value={selectedCustomerId}
+    onChange={(event) => setSelectedCustomerId(event.target.value)}
+    className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+  >
+    <option value="">Walk-in Customer / No Customer</option>
+
+    {filteredCustomers.map((customer) => (
+      <option key={customer.id} value={String(customer.id)}>
+        {customer.code} — {customer.name}
+        {customer.phone ? ` (${customer.phone})` : ''}
+      </option>
+    ))}
+  </select>
+
+  {selectedCustomer && (
+    <div className="p-3 rounded-xl bg-blue-50 border border-blue-100 space-y-2">
+      <div className="flex justify-between items-start gap-2">
+        <div>
+          <p className="font-bold text-sm text-slate-800">
+            {selectedCustomer.name}
+          </p>
+          <p className="text-xs text-slate-500">
+            {selectedCustomer.code}
+            {selectedCustomer.phone
+              ? ` · ${selectedCustomer.phone}`
+              : ''}
+          </p>
+        </div>
+
+        <span className="px-2 py-1 rounded-lg bg-white text-blue-700 text-xs font-bold capitalize">
+          {selectedCustomer.membership}
+        </span>
+      </div>
+
+      <div className="flex justify-between items-center pt-2 border-t border-blue-100">
+        <span className="text-xs text-slate-600">
+          Loyalty Points
+        </span>
+        <span className="font-black text-blue-700">
+          {selectedCustomer.points.toLocaleString()}
+        </span>
+      </div>
+
+      <button
+        type="button"
+        onClick={() => setSelectedCustomerId('')}
+        className="text-xs font-semibold text-rose-600 hover:text-rose-800"
+      >
+        Remove Customer
+      </button>
+    </div>
+  )}
+
+  {!loadingCustomers && filteredCustomers.length === 0 && (
+    <p className="text-xs text-slate-500">
+      No matching customers found. You can still complete a sale without a customer.
+    </p>
+  )}
+</div>
+
 
           <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 space-y-2">
             <h4 className="font-bold text-xs uppercase text-slate-500 tracking-wider">

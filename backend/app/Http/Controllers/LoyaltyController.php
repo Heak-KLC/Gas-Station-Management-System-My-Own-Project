@@ -109,6 +109,7 @@ class LoyaltyController extends Controller
                 'id' => $customer->customer_id,
                 'customer_id' => $customer->customer_id,
                 'full_name' => $customer->full_name,
+                'customer_code' => $customer->customer_code,
                 'phone' => $customer->phone,
                 'email' => $customer->email,
                 'address' => $customer->address,

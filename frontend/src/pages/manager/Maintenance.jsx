@@ -733,10 +733,20 @@ useEffect(() => {
               <Field label="Performed date" type="date" max={today} value={form.performed} onChange={(e) => setForm({ ...form, performed: e.target.value })} />
             )}
 
-            <label className="col-span-2 block text-sm">
-              Notes (optional)
-              <textarea rows={2} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} className="mt-1 w-full rounded-lg border px-3 py-2" />
-            </label>
+            
+<label className="col-span-2 block text-sm">
+  Manager Response
+  <textarea
+    rows={3}
+    value={form.notes}
+    onChange={(e) =>
+      setForm({ ...form, notes: e.target.value })
+    }
+    placeholder="Describe the action taken or response to the reported issue..."
+    className="mt-1 w-full rounded-lg border px-3 py-2"
+  />
+</label>
+
 
             {error && <p className="col-span-2 text-sm text-red-500">{error}</p>}
 
@@ -762,7 +772,10 @@ useEffect(() => {
             <dt className="text-slate-500">Performed</dt><dd>{fmt(selected.performed)}</dd>
             <dt className="text-slate-500">Cost</dt><dd>{usd(selected.cost)}</dd>
             <dt className="text-slate-500">Performed by</dt><dd>{selected.by ? `${getEmployeeName(selected.employee)} (ID: ${selected.by})` : "-"}</dd>
-            <dt className="text-slate-500">Notes</dt><dd className="break-words">{selected.notes || "-"}</dd>
+            <dt className="text-slate-500">Manager Response</dt>
+<dd className="break-words whitespace-pre-wrap">
+  {selected.notes || "No response yet."}
+</dd>
           </dl>
 
           <div className="mt-5 flex flex-wrap justify-end gap-2">

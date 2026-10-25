@@ -1,4 +1,3 @@
-
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Fuel, ShoppingCart, Banknote, ClipboardList, Bell, AlertCircle,
@@ -599,38 +598,46 @@ const [shiftLoading, setShiftLoading] = useState(true);
 const [shiftActionLoading, setShiftActionLoading] = useState(false);
 const [shiftError, setShiftError] = useState("");
 
-  const loadDashboard = useCallback(async () => {
-    setLoading(true);
-    setError("");
 
-    try {
-      const token = sessionStorage.getItem("gas_station_token");
+const loadDashboard = useCallback(async () => {
+  setLoading(true);
+  setError("");
 
-      if (!token) {
-        throw new Error("Your session has expired. Please log in again.");
-      }
+  try {
+    const token = sessionStorage.getItem("gas_station_token");
 
-      const [fuelRows, storeRows, pumpResponse] = await Promise.all([
-        fetchAllPages("/fuel-sales", token),
-        fetchAllPages("/store-sales", token),
-        apiGet("/fuel-pumps", token),
-      ]);
-
-      const pumpRows = Array.isArray(pumpResponse)
-        ? pumpResponse
-        : Array.isArray(pumpResponse?.data)
-          ? pumpResponse.data
-          : [];
-
-      setFuelSales(fuelRows.filter((sale) => isToday(sale.sale_date)));
-      setStoreSales(storeRows.filter((sale) => isToday(sale.sale_date)));
-      setPumps(pumpRows);
-    } catch (err) {
-      setError(err.message || "Unable to load Dashboard data.");
-    } finally {
-      setLoading(false);
+    if (!token) {
+      throw new Error("Your session has expired. Please log in again.");
     }
-  }, []);
+
+    // Use the same local date format as Daily Sales.
+    const today = getToday();
+    const dateQuery = `?date=${encodeURIComponent(today)}`;
+
+    const [fuelRows, storeRows, pumpResponse] = await Promise.all([
+      fetchAllPages(`/fuel-sales${dateQuery}`, token),
+      fetchAllPages(`/store-sales${dateQuery}`, token),
+      apiGet("/fuel-pumps", token),
+    ]);
+
+    const pumpRows = Array.isArray(pumpResponse)
+      ? pumpResponse
+      : Array.isArray(pumpResponse?.data)
+        ? pumpResponse.data
+        : [];
+
+    // Backend has already filtered sales by sale_date.
+    // Keep all today's sales for the recent-sales table and CSV export.
+    setFuelSales(fuelRows);
+    setStoreSales(storeRows);
+    setPumps(pumpRows);
+  } catch (err) {
+    setError(err.message || "Unable to load Dashboard data.");
+  } finally {
+    setLoading(false);
+  }
+}, []);
+
 
 
   const loadCurrentShift = useCallback(async () => {
