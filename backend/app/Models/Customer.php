@@ -28,6 +28,7 @@ class Customer extends Model
         'email',
         'phone',
         'address',
+        'date_of_birth',
         'loyalty_membership',
         'loyalty_points',
         'total_purchases',
@@ -36,11 +37,13 @@ class Customer extends Model
 
     // Convert database values to the correct PHP types.
     protected $casts = [
+        'date_of_birth' => 'date:Y-m-d',
         'loyalty_points' => 'integer',
         'total_purchases' => 'decimal:2',
         'is_active' => 'boolean',
         'registered_at' => 'datetime',
         'updated_at' => 'datetime',
+        
     ];
 
     // Customer → Fuel Sales

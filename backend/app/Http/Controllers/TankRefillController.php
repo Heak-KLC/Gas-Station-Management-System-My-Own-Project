@@ -6,6 +6,7 @@ use App\Models\AuditLog;
 use App\Models\FuelPurchaseOrder;
 use App\Models\FuelTank;
 use App\Models\TankRefill;
+use App\Models\FuelType;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -178,6 +179,18 @@ class TankRefillController extends Controller
             // Update the tank volume.
             $tank->current_volume = $newVolume;
             $tank->save();
+
+
+// Update the fuel stock used by POS.
+$fuelType = FuelType::where(
+    'fuel_id',
+    $tank->fuel_id
+)->lockForUpdate()->firstOrFail();
+
+$fuelType->available_quantity =
+    (float) $fuelType->available_quantity + $quantity;
+
+$fuelType->save();
 
             /*
              * Receive the Purchase Order in this same

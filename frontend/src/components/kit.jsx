@@ -61,8 +61,59 @@ export const Table = ({ head, rows }) => (
 export const Bar = ({ pct, c = 'bg-emerald-500' }) => (
   <div className="h-2 rounded-full bg-slate-200 overflow-hidden"><div className={`h-full ${c}`} style={{ width: `${pct}%` }} /></div>
 );
-export const Pager = () => (
-  <div className="flex justify-center gap-1 py-3">{['1', '2', '»'].map((p, i) =>
-    <button key={p} className={`px-3 py-1 rounded border text-sm ${i === 0 ? 'bg-sky-500 text-white border-sky-500' : 'bg-white'}`}>{p}</button>)}</div>
-);
+
+export const Pager = ({
+  currentPage = 1,
+  totalPages = 1,
+  onPageChange = () => {},
+}) => {
+  if (totalPages <= 1) return null;
+
+  const pages = Array.from(
+    { length: totalPages },
+    (_, index) => index + 1
+  );
+
+  const buttonClass = (active) =>
+    `px-3 py-1 rounded border text-sm ${
+      active
+        ? 'bg-sky-500 text-white border-sky-500'
+        : 'bg-white text-slate-700 hover:bg-sky-50'
+    }`;
+
+  return (
+    <div className="flex flex-wrap justify-center gap-1 py-3">
+      <button
+        type="button"
+        disabled={currentPage === 1}
+        onClick={() => onPageChange(currentPage - 1)}
+        className="px-3 py-1 rounded border text-sm disabled:opacity-40"
+      >
+        Previous
+      </button>
+
+      {pages.map((page) => (
+        <button
+          key={page}
+          type="button"
+          onClick={() => onPageChange(page)}
+          aria-current={currentPage === page ? 'page' : undefined}
+          className={buttonClass(currentPage === page)}
+        >
+          {page}
+        </button>
+      ))}
+
+      <button
+        type="button"
+        disabled={currentPage === totalPages}
+        onClick={() => onPageChange(currentPage + 1)}
+        className="px-3 py-1 rounded border text-sm disabled:opacity-40"
+      >
+        Next
+      </button>
+    </div>
+  );
+};
+
 export const Actions = () => <span className="flex gap-2"><button title="View">👁</button><button title="Edit">✏️</button><button title="Delete">🗑</button></span>;

@@ -33,6 +33,7 @@ class FuelSale extends Model
         'payment_method',
         'payment_status',
         'sold_by',
+        'shift_id',
         'sale_date',
         'receipt_number',
     ];
@@ -87,4 +88,13 @@ class FuelSale extends Model
             'user_id'
         );
     }
+
+    public function seller()
+{
+    return $this->belongsTo(
+        User::class,
+        'sold_by',
+        'user_id'
+    );
+}
 }

@@ -44,6 +44,7 @@ class EquipmentMaintenance extends Model
             'employee_id'
         );
     }
+    
 
     /*
      * equipment_id is not linked to one fixed table.

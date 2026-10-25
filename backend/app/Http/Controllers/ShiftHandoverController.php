@@ -8,10 +8,13 @@ use Illuminate\Validation\Rule;
 
 class ShiftHandoverController extends Controller
 {
-    // Get all shift handovers
     public function index()
     {
-        $handovers = ShiftHandover::orderByDesc('handed_over_at')
+        $handovers = ShiftHandover::with([
+            'outgoingEmployee:employee_id,full_name',
+            'incomingEmployee:employee_id,full_name',
+        ])
+            ->orderByDesc('handed_over_at')
             ->orderByDesc('handover_id')
             ->get();
 
@@ -21,7 +24,6 @@ class ShiftHandoverController extends Controller
         ]);
     }
 
-    // Create a new shift handover
     public function store(Request $request)
     {
         $validated = $request->validate([
@@ -29,38 +31,52 @@ class ShiftHandoverController extends Controller
                 'required',
                 Rule::in(['Morning', 'Afternoon', 'Night']),
             ],
+
             'outgoing_employee_id' => [
                 'required',
                 'integer',
                 'different:incoming_employee_id',
                 'exists:employees,employee_id',
             ],
+
             'incoming_employee_id' => [
                 'required',
                 'integer',
                 'exists:employees,employee_id',
             ],
+
             'total_fuel_liters' => [
-                'required',
-                'numeric',
-                'min:0',
+                'required', 'numeric', 'min:0',
             ],
+
             'expected_cash' => [
-                'required',
-                'numeric',
-                'min:0',
+                'required', 'numeric', 'min:0',
             ],
+
             'actual_cash' => [
-                'required',
-                'numeric',
-                'min:0',
+                'required', 'numeric', 'min:0',
             ],
+
+            'cash_denominations' => [
+                'nullable', 'array',
+            ],
+
+            'cash_denominations.*' => [
+                'required', 'integer', 'min:0',
+            ],
+
             'status' => [
                 'sometimes',
                 Rule::in(['Pending', 'Approved', 'Flagged']),
             ],
-            'reason' => ['nullable', 'string'],
-            'handed_over_at' => ['sometimes', 'date'],
+
+            'reason' => [
+                'nullable', 'string',
+            ],
+
+            'handed_over_at' => [
+                'sometimes', 'date',
+            ],
         ]);
 
         $validated['created_by'] =
@@ -71,14 +87,19 @@ class ShiftHandoverController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Shift handover created successfully.',
-            'data' => $handover,
+            'data' => $handover->load([
+                'outgoingEmployee:employee_id,full_name',
+                'incomingEmployee:employee_id,full_name',
+            ]),
         ], 201);
     }
 
-    // Get one shift handover
     public function show(string $id)
     {
-        $handover = ShiftHandover::findOrFail($id);
+        $handover = ShiftHandover::with([
+            'outgoingEmployee:employee_id,full_name',
+            'incomingEmployee:employee_id,full_name',
+        ])->findOrFail($id);
 
         return response()->json([
             'success' => true,
@@ -86,7 +107,6 @@ class ShiftHandoverController extends Controller
         ]);
     }
 
-    // Update a shift handover
     public function update(Request $request, string $id)
     {
         $handover = ShiftHandover::findOrFail($id);
@@ -96,43 +116,50 @@ class ShiftHandoverController extends Controller
                 'sometimes',
                 Rule::in(['Morning', 'Afternoon', 'Night']),
             ],
+
             'outgoing_employee_id' => [
-                'sometimes',
-                'required',
-                'integer',
+                'sometimes', 'required', 'integer',
                 'different:incoming_employee_id',
                 'exists:employees,employee_id',
             ],
+
             'incoming_employee_id' => [
-                'sometimes',
-                'required',
-                'integer',
+                'sometimes', 'required', 'integer',
                 'exists:employees,employee_id',
             ],
+
             'total_fuel_liters' => [
-                'sometimes',
-                'required',
-                'numeric',
-                'min:0',
+                'sometimes', 'required', 'numeric', 'min:0',
             ],
+
             'expected_cash' => [
-                'sometimes',
-                'required',
-                'numeric',
-                'min:0',
+                'sometimes', 'required', 'numeric', 'min:0',
             ],
+
             'actual_cash' => [
-                'sometimes',
-                'required',
-                'numeric',
-                'min:0',
+                'sometimes', 'required', 'numeric', 'min:0',
             ],
+
+            'cash_denominations' => [
+                'sometimes', 'nullable', 'array',
+            ],
+
+            'cash_denominations.*' => [
+                'required', 'integer', 'min:0',
+            ],
+
             'status' => [
                 'sometimes',
                 Rule::in(['Pending', 'Approved', 'Flagged']),
             ],
-            'reason' => ['sometimes', 'nullable', 'string'],
-            'handed_over_at' => ['sometimes', 'date'],
+
+            'reason' => [
+                'sometimes', 'nullable', 'string',
+            ],
+
+            'handed_over_at' => [
+                'sometimes', 'date',
+            ],
         ]);
 
         $handover->update($validated);
@@ -140,11 +167,13 @@ class ShiftHandoverController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Shift handover updated successfully.',
-            'data' => $handover->fresh(),
+            'data' => $handover->fresh()->load([
+                'outgoingEmployee:employee_id,full_name',
+                'incomingEmployee:employee_id,full_name',
+            ]),
         ]);
     }
 
-    // Delete a shift handover
     public function destroy(string $id)
     {
         $handover = ShiftHandover::findOrFail($id);

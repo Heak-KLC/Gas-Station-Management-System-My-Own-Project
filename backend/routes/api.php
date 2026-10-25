@@ -26,6 +26,10 @@ use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\AuditLogController;
 use App\Http\Controllers\ShiftHandoverController;
+use App\Http\Controllers\CashierDashboardController;
+use App\Http\Controllers\LoyaltyController;
+use App\Http\Controllers\ShiftController;
+
 
 
 
@@ -554,18 +558,51 @@ Route::patch(
     [NotificationController::class, 'archiveOne']
 );
 
+Route::get(
+    '/cashier/dashboard-summary',
+    [CashierDashboardController::class, 'summary']
+);
+
+Route::get(
+    '/cashier/dashboard-export',
+    [CashierDashboardController::class, 'exportSales']
+);
+
+Route::post('/fuel-sales', [
+    FuelSaleController::class,
+    'store',
+]);
+
+Route::get(
+    '/loyalty/customers',
+    [LoyaltyController::class, 'index']
+);
+
 // =====================================================
 // SHIFT HANDOVERS API
 // All routes require a valid Sanctum token.
 // =====================================================
 
-Route::middleware('auth:sanctum')->group(function () {
-    Route::apiResource(
-        'shift-handovers',
-        ShiftHandoverController::class
-    );
-});
+// =====================================================
+// SHIFT HANDOVERS API
+// All routes require a valid Sanctum token.
+// =====================================================
+
+Route::apiResource(
+    'shift-handovers',
+    ShiftHandoverController::class
+);
 
 
 
 });
+
+
+Route::middleware('auth:sanctum')
+    ->prefix('shifts')
+    ->group(function () {
+        Route::get('/current', [ShiftController::class, 'current']);
+        Route::post('/start', [ShiftController::class, 'start']);
+        Route::post('/end', [ShiftController::class, 'end']);
+    });
+

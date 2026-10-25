@@ -1,360 +1,691 @@
-import React, { useState } from 'react';
-import { Fuel, Save, Gauge, AlertTriangle, CheckCircle, Clock, X } from 'lucide-react';
+import React, { useCallback, useEffect, useState } from "react";
+import {
+  Save,
+  Gauge,
+  RefreshCw,
+  LoaderCircle,
+  AlertTriangle,
+  X,
+} from "lucide-react";
 
-const initialPumps = [
-  { 
-    id: 'Pump A (Super 95)', 
-    pumpName: 'Pump A', 
-    fuelType: 'Super 95', 
-    tank: 'Tank A', 
-    prev: 12345.1, 
-    off: false 
-  },
-  { 
-    id: 'Pump B (Diesel)', 
-    pumpName: 'Pump B', 
-    fuelType: 'Diesel', 
-    tank: 'Tank B', 
-    prev: 9876.5, 
-    off: false 
-  },
-  { 
-    id: 'Pump C (Normal 92)', 
-    pumpName: 'Pump C', 
-    fuelType: 'Normal 92', 
-    tank: 'Tank C', 
-    prev: 0, 
-    off: true, 
-    reason: 'Status: Maintenance,\nFloater sensor failure\nReported: Aug/10/2026 11:25 AM' 
-  },
-  { 
-    id: 'Pump D (Diesel)', 
-    pumpName: 'Pump D', 
-    fuelType: 'Diesel', 
-    tank: 'Tank B', 
-    prev: 12345.1, 
-    off: false 
+const API_URL = "http://127.0.0.1:8000/api";
+
+const getToken = () =>
+  sessionStorage.getItem("gas_station_token");
+
+async function apiRequest(endpoint, options = {}) {
+  const token = getToken();
+
+  const response = await fetch(`${API_URL}${endpoint}`, {
+    ...options,
+    headers: {
+      Accept: "application/json",
+      ...(options.body ? { "Content-Type": "application/json" } : {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...options.headers,
+    },
+  });
+
+  const result = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    const validationErrors = result.errors
+      ? Object.values(result.errors).flat().join(" ")
+      : "";
+
+    throw new Error(
+      validationErrors ||
+        result.message ||
+        `Request failed (${response.status}).`
+    );
   }
-];
 
-const initialLogs = [
-  { id: '372 132066', pump: 'Pump A', fuel: 'Super', liters: '50 L', amount: '2,250,000', time: '10:15 AM', attendant: 'Sovan Dara', status: 'Complete' },
-  { id: '372 132065', pump: 'Pump B', fuel: 'Diesel', liters: '100 L', amount: '4,100,000', time: '10:08 AM', attendant: 'Sovan Dara', status: 'Complete' },
-  { id: '372 132064', pump: 'Pump A', fuel: 'Super', liters: '40 L', amount: '1,800,000', time: '09:55 AM', attendant: 'Sovan Dara', status: 'Complete' },
-  { id: '372 132063', pump: 'Pump A', fuel: 'Super', liters: '30 L', amount: '1,290,000', time: '09:45 AM', attendant: 'Sovan Dara', status: 'Complete' },
-  { id: '372 132062', pump: 'Pump D', fuel: 'Super', liters: '80 L', amount: '3,280,000', time: '08:15 AM', attendant: 'Sovan Dara', status: 'Pending' },
-  { id: '372 132061', pump: 'Pump A', fuel: 'Super', liters: '40 L', amount: '1,800,000', time: '08:10 AM', attendant: 'Sovan Dara', status: 'Complete' },
-  { id: '372 132060', pump: 'Pump B', fuel: 'Diesel', liters: '80 L', amount: '3,280,000', time: '07:45 AM', attendant: 'Sovan Dara', status: 'Complete' },
-  { id: '372 132059', pump: 'Pump A', fuel: 'Super', liters: '50 L', amount: '2,250,000', time: '06:50 AM', attendant: 'Sovan Dara', status: 'Complete' },
-  { id: '372 132058', pump: 'Pump C', fuel: 'Normal', liters: '0.0 L', amount: '0', time: '06:08 AM', attendant: 'System', status: 'Error (Maint)' }
-];
+  return result;
+}
+
+function formatNumber(value, decimals = 3) {
+  const number = Number(value);
+
+  if (!Number.isFinite(number)) return "0.000";
+
+  return number.toLocaleString("en-US", {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
+}
+
+function formatDateTime(value) {
+  if (!value) return "—";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return "—";
+
+  return date.toLocaleString("en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    month: "short",
+    day: "2-digit",
+  });
+}
+
+function getPumpStatus(status) {
+  return String(status || "").toLowerCase().replaceAll(" ", "_");
+}
+
+function isPumpUnavailable(pump) {
+  return ["under_maintenance", "out_of_service"].includes(
+    getPumpStatus(pump.status)
+  );
+}
+
+function mapPump(pump) {
+  return {
+    id: pump.pump_id,
+    pumpNumber: pump.pump_number || `Pump ${pump.pump_id}`,
+    fuelType:
+      pump.fuel_type?.name ||
+      pump.fuel_type?.fuel_name ||
+      pump.fuelType?.name ||
+      pump.fuelType?.fuel_name ||
+      pump.fuelType?.fuel_type ||
+      `Fuel ID ${pump.fuel_id}`,
+    fuelId: Number(pump.fuel_id),
+    status: getPumpStatus(pump.status),
+    prev: Number(pump.meter_reading ?? 0),
+    raw: pump,
+  };
+}
+
+function mapSale(sale) {
+  return {
+    id: sale.sale_id,
+    saleNumber: sale.sale_number || `SALE-${sale.sale_id}`,
+    pump:
+      sale.pump?.pump_number ||
+      (sale.pump_id ? `Pump ${sale.pump_id}` : "—"),
+    fuel:
+      sale.fuelType?.name ||
+      sale.fuelType?.fuel_name ||
+      sale.fuelType?.fuel_type ||
+      `Fuel ID ${sale.fuel_id}`,
+    liters: Number(sale.quantity ?? 0),
+    amount: Number(sale.total_amount ?? 0),
+    time: sale.sale_date,
+    attendant:
+  sale.soldBy?.full_name ||
+  sale.sold_by?.full_name ||
+  sale.seller?.full_name ||
+  sale.attendant?.full_name ||
+  sale.sold_by_name ||
+  "—",
+    status: sale.payment_status || "Recorded",
+  };
+}
 
 export default function MeterInput() {
-  const [pumps, setPumps] = useState(initialPumps);
+  const [pumps, setPumps] = useState([]);
   const [newMeters, setNewMeters] = useState({});
-  const [logs, setLogs] = useState(initialLogs);
+  const [logs, setLogs] = useState([]);
 
-  // Modal State
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [toastMessage, setToastMessage] = useState("");
+
   const [activeModalPump, setActiveModalPump] = useState(null);
-  const [modalMeterInput, setModalMeterInput] = useState('');
-  const [toastMessage, setToastMessage] = useState('');
+  const [modalMeterInput, setModalMeterInput] = useState("");
 
-  // Toast System
-  const triggerToast = (msg) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(''), 3000);
+  const triggerToast = (message) => {
+    setToastMessage(message);
+    window.setTimeout(() => setToastMessage(""), 3500);
   };
 
-  // គណនា Liters (New Meter - Previous Meter)
-  const getAutoCalcLiters = (p) => {
-    const val = newMeters[p.id];
-    if (val !== undefined && val !== '') {
-      const diff = parseFloat(val) - p.prev;
-      return diff.toFixed(1);
+  const loadData = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError("");
+
+      const [pumpResult, salesResult] = await Promise.all([
+        apiRequest("/fuel-pumps"),
+        apiRequest("/fuel-sales"),
+      ]);
+
+      const pumpData = Array.isArray(pumpResult)
+        ? pumpResult
+        : Array.isArray(pumpResult.data)
+        ? pumpResult.data
+        : [];
+
+      const salesData = Array.isArray(salesResult)
+        ? salesResult
+        : Array.isArray(salesResult.data)
+        ? salesResult.data
+        : [];
+
+      setPumps(pumpData.map(mapPump));
+
+      setLogs(
+        salesData
+          .map(mapSale)
+          .sort(
+            (a, b) =>
+              new Date(b.time || 0).getTime() -
+              new Date(a.time || 0).getTime()
+          )
+          .slice(0, 9)
+      );
+    } catch (err) {
+      console.error("Failed to load meter input data:", err);
+      setError(err.message || "Failed to load pump and sales data.");
+    } finally {
+      setLoading(false);
     }
-    return '';
+  }, []);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  const getAutoCalcLiters = (pump) => {
+    const value = newMeters[pump.id];
+
+    if (value === undefined || value === "") return "";
+
+    const reading = Number(value);
+
+    if (!Number.isFinite(reading)) return "";
+
+    return (reading - pump.prev).toFixed(3);
   };
 
-  // ពិនិត្យ Validation Rule (Must be >= previous)
-  const isInvalid = (p) => {
-    const val = newMeters[p.id];
-    return val !== undefined && val !== '' && parseFloat(val) < p.prev;
+  const isInvalid = (pump) => {
+    const value = newMeters[pump.id];
+
+    return (
+      value !== undefined &&
+      value !== "" &&
+      (!Number.isFinite(Number(value)) ||
+        Number(value) < pump.prev)
+    );
   };
 
-  // 1. Save All Bulk Meters
-  const handleSaveAll = () => {
-    let hasError = false;
-    let savedCount = 0;
+  const saveMeter = async (pump, inputValue) => {
+    const value = Number(inputValue);
 
-    pumps.forEach((p) => {
-      if (!p.off) {
-        if (isInvalid(p)) {
-          hasError = true;
-        } else if (newMeters[p.id] !== undefined && newMeters[p.id] !== '') {
-          savedCount++;
-        }
+    if (!inputValue || !Number.isFinite(value) || value < 0) {
+      throw new Error("Please enter a valid meter reading.");
+    }
+
+    if (value < pump.prev) {
+      throw new Error(
+        "The new meter reading cannot be lower than the previous reading."
+      );
+    }
+
+    if (isPumpUnavailable(pump)) {
+      throw new Error("This pump is unavailable for meter input.");
+    }
+
+    const raw = pump.raw;
+
+    // Keep all fields required by the existing pump update endpoint.
+    const payload = {
+      pump_number: raw.pump_number,
+      fuel_id: raw.fuel_id,
+      status: raw.status,
+      model: raw.model ?? null,
+      serial_number: raw.serial_number ?? null,
+      installation_date: raw.installation_date ?? null,
+      last_maintenance_date: raw.last_maintenance_date ?? null,
+      next_maintenance_date: raw.next_maintenance_date ?? null,
+      meter_reading: value,
+    };
+
+    await apiRequest(`/fuel-pumps/${pump.id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+  };
+
+  const handleSaveAll = async () => {
+    if (saving) return;
+
+    const pending = pumps.filter(
+      (pump) =>
+        !isPumpUnavailable(pump) &&
+        newMeters[pump.id] !== undefined &&
+        newMeters[pump.id] !== ""
+    );
+
+    if (pending.length === 0) {
+      triggerToast("Please enter at least one new meter reading.");
+      return;
+    }
+
+    const invalidPump = pending.find(isInvalid);
+
+    if (invalidPump) {
+      triggerToast(
+        `${invalidPump.pumpNumber}: the new reading must be greater than or equal to the previous reading.`
+      );
+      return;
+    }
+
+    setSaving(true);
+    setError("");
+
+    const savedIds = [];
+    const failed = [];
+
+    // Save individually so one failed request does not hide other results.
+    for (const pump of pending) {
+      try {
+        await saveMeter(pump, newMeters[pump.id]);
+        savedIds.push(pump.id);
+      } catch (err) {
+        failed.push(`${pump.pumpNumber}: ${err.message}`);
       }
+    }
+
+    try {
+      await loadData();
+    } catch {
+      // loadData displays its own error message.
+    }
+
+    setNewMeters((previous) => {
+      const remaining = { ...previous };
+
+      savedIds.forEach((id) => {
+        delete remaining[id];
+      });
+
+      return remaining;
     });
 
-    if (hasError) {
-      triggerToast('សូមពិនិត្យមើលលេខកុងទ័រ! លេខកុងទ័រថ្មីត្រូវតែធំជាង ឬស្មើលេខកុងទ័រចាស់។');
-      return;
-    }
+    setSaving(false);
 
-    if (savedCount === 0) {
-      triggerToast('សូមបញ្ចូលលេខកុងទ័រថ្មីយ៉ាងហោចណាស់មួយជាមុនសិន!');
-      return;
-    }
+    if (failed.length > 0) {
+      setError(
+        `Some readings could not be saved:\n${failed.join("\n")}`
+      );
 
-    triggerToast(`បានរក្សាទុកលេខកុងទ័រ ${savedCount} Pumps រួចរាល់!`);
+      if (savedIds.length > 0) {
+        triggerToast(
+          `Saved ${savedIds.length} reading(s). Some readings failed.`
+        );
+      }
+    } else {
+      triggerToast(`Successfully saved ${savedIds.length} meter reading(s).`);
+    }
   };
 
-  // 2. Open Single Pump Modal
-  const handleOpenSingleModal = (p) => {
-    if (p.off) return;
-    setActiveModalPump(p);
-    setModalMeterInput(newMeters[p.id] || '');
+  const handleOpenSingleModal = (pump) => {
+    if (isPumpUnavailable(pump) || saving) return;
+
+    setActiveModalPump(pump);
+    setModalMeterInput(
+      newMeters[pump.id] !== undefined
+        ? newMeters[pump.id]
+        : ""
+    );
   };
 
-  // 3. Save Single Pump Modal
-  const handleSaveSingleModal = (e) => {
-    e.preventDefault();
-    if (!modalMeterInput) return;
+  const handleSaveSingleModal = async (event) => {
+    event.preventDefault();
 
-    const val = parseFloat(modalMeterInput);
-    if (val < activeModalPump.prev) {
-      triggerToast('លេខកុងទ័រថ្មីមិនអាចតូចជាងលេខកុងទ័រចាស់ទេ!');
-      return;
+    if (!activeModalPump || saving) return;
+
+    try {
+      setSaving(true);
+      setError("");
+
+      await saveMeter(activeModalPump, modalMeterInput);
+
+      const savedId = activeModalPump.id;
+
+      setActiveModalPump(null);
+      setModalMeterInput("");
+
+      setNewMeters((previous) => {
+        const next = { ...previous };
+        delete next[savedId];
+        return next;
+      });
+
+      await loadData();
+      triggerToast("Meter reading saved successfully.");
+    } catch (err) {
+      setError(err.message || "Failed to save meter reading.");
+    } finally {
+      setSaving(false);
     }
-
-    setNewMeters((prev) => ({ ...prev, [activeModalPump.id]: modalMeterInput }));
-    setActiveModalPump(null);
-    triggerToast(`បានបញ្ចូលកុងទ័រសម្រាប់ ${activeModalPump.id} រួចរាល់!`);
   };
 
   return (
-    <div className="p-6 bg-slate-200 min-h-screen text-slate-800 space-y-6 font-sans select-none">
-      
-      {/* Dynamic Toast Notification */}
+    <div className="min-h-screen space-y-6 bg-slate-200 p-6 font-sans text-slate-800">
       {toastMessage && (
-        <div className="fixed top-5 right-5 z-50 bg-slate-900 text-white px-6 py-3.5 rounded-2xl shadow-2xl text-base font-bold border border-slate-700 animate-bounce">
-          ⚡ {toastMessage}
+        <div
+          role="status"
+          className="fixed right-5 top-5 z-50 rounded-xl border border-slate-700 bg-slate-900 px-5 py-3 text-sm font-bold text-white shadow-xl"
+        >
+          {toastMessage}
         </div>
       )}
 
-      {/* 1. Bulk Meter Entry Form Card */}
-      <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 space-y-4">
-        
-        {/* Header Title & Save All Button */}
-        <div className="flex flex-wrap justify-between items-center gap-4 border-b pb-4">
-          <h2 className="text-lg lg:text-xl font-black text-slate-900">
-            Active Shift & Bulk Meter Entry Form <span className="text-slate-500 font-semibold text-base">(SHIFT #9 05:00 AM - 02:00 PM)</span>
-          </h2>
+      {error && (
+        <div
+          role="alert"
+          className="flex items-start gap-3 whitespace-pre-line rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm font-semibold text-rose-700"
+        >
+          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+          <span className="flex-1">{error}</span>
           <button
-            onClick={handleSaveAll}
-            className="px-6 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-sm rounded-xl shadow-md transition-all active:scale-95 flex items-center gap-2"
+            type="button"
+            onClick={() => setError("")}
+            aria-label="Dismiss error"
           >
-            <Save className="w-4 h-4" /> Save All
+            <X className="h-4 w-4" />
           </button>
         </div>
+      )}
 
-        {/* Pump List Rows (ស្អាតដូចក្នុង UI រូបភាព 100%) */}
-        <div className="space-y-3">
-          {pumps.map((p) => {
-            const invalid = isInvalid(p);
-            const liters = getAutoCalcLiters(p);
+      <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-4 border-b pb-4">
+          <div>
+            <h2 className="text-xl font-black text-slate-900">
+              Active Shift & Bulk Meter Entry Form
+            </h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Pump readings are loaded from the database.
+            </p>
+          </div>
 
-            return (
-              <div
-                key={p.id}
-                className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center p-3.5 bg-slate-50 rounded-2xl border border-slate-200 text-sm font-bold"
-              >
-                {/* Col 1: Pump ID & Tank */}
-                <div className="md:col-span-3">
-                  <p className="text-base font-black text-slate-900">{p.id}</p>
-                  <p className="text-xs text-slate-500 font-semibold">{p.tank}</p>
-                </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={loadData}
+              disabled={loading || saving}
+              className="flex items-center gap-2 rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-bold hover:bg-slate-50 disabled:opacity-50"
+            >
+              <RefreshCw className="h-4 w-4" />
+              Refresh
+            </button>
 
-                {/* Col 2: Previous Meter / Status */}
-                <div className="md:col-span-3">
-                  {p.off ? (
-                    <div className="bg-slate-200/80 p-2.5 rounded-xl border border-slate-300 text-xs text-rose-600 font-bold whitespace-pre-line leading-tight">
-                      {p.reason}
+            <button
+              type="button"
+              onClick={handleSaveAll}
+              disabled={loading || saving || pumps.length === 0}
+              className="flex items-center gap-2 rounded-xl bg-emerald-500 px-5 py-2.5 text-sm font-bold text-white shadow-md hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {saving ? (
+                <LoaderCircle className="h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4" />
+              )}
+              Save All
+            </button>
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="flex items-center justify-center gap-3 py-12 text-slate-500">
+            <LoaderCircle className="h-6 w-6 animate-spin" />
+            <span className="font-semibold">Loading pump data...</span>
+          </div>
+        ) : pumps.length === 0 ? (
+          <div className="py-10 text-center text-sm font-semibold text-slate-500">
+            No pumps were returned by the API.
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {pumps.map((pump) => {
+              const unavailable = isPumpUnavailable(pump);
+              const invalid = isInvalid(pump);
+              const liters = getAutoCalcLiters(pump);
+
+              return (
+                <div
+                  key={pump.id}
+                  className="grid grid-cols-1 items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm md:grid-cols-12"
+                >
+                  <div className="md:col-span-3">
+                    <p className="text-base font-black text-slate-900">
+                      {pump.pumpNumber}
+                    </p>
+                    <p className="text-xs font-semibold text-slate-500">
+                      {pump.fuelType}
+                    </p>
+                    <p
+                      className={`mt-1 text-xs font-bold ${
+                        unavailable ? "text-rose-600" : "text-emerald-700"
+                      }`}
+                    >
+                      {pump.status.replaceAll("_", " ")}
+                    </p>
+                  </div>
+
+                  <div className="md:col-span-3">
+                    <div className="rounded-xl border border-sky-200 bg-sky-100/70 p-3 text-xs text-slate-700">
+                      Previous Meter:
+                      <span className="ml-1 font-extrabold text-slate-900">
+                        {formatNumber(pump.prev)} L
+                      </span>
                     </div>
-                  ) : (
-                    <div className="bg-sky-100/70 p-2.5 rounded-xl border border-sky-200 text-xs text-slate-700">
-                      Previous Meter: <span className="font-extrabold text-slate-900">{p.prev.toLocaleString()} L</span>
-                    </div>
-                  )}
-                </div>
+                  </div>
 
-                {/* Col 3: New Meter Input */}
-                <div className="md:col-span-2">
-                  <input
-                    disabled={p.off}
-                    type="number"
-                    step="0.1"
-                    placeholder={p.off ? 'N/A' : 'New Meter (Input)'}
-                    value={newMeters[p.id] || ''}
-                    onChange={(e) => setNewMeters({ ...newMeters, [p.id]: e.target.value })}
-                    className={`w-full p-2.5 bg-white border rounded-xl text-sm font-bold focus:outline-none focus:ring-2 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed ${
-                      invalid ? 'border-rose-500 ring-1 ring-rose-500/20' : 'border-slate-300 focus:ring-blue-500'
-                    }`}
-                  />
-                </div>
+                  <div className="md:col-span-2">
+                    <input
+                      type="number"
+                      min={pump.prev}
+                      step="0.001"
+                      disabled={unavailable || saving}
+                      placeholder={unavailable ? "Unavailable" : "New Reading"}
+                      value={newMeters[pump.id] ?? ""}
+                      onChange={(event) =>
+                        setNewMeters((previous) => ({
+                          ...previous,
+                          [pump.id]: event.target.value,
+                        }))
+                      }
+                      className={`w-full rounded-xl border bg-white p-2.5 text-sm font-bold focus:outline-none focus:ring-2 disabled:cursor-not-allowed disabled:bg-slate-200 ${
+                        invalid
+                          ? "border-rose-500 focus:ring-rose-300"
+                          : "border-slate-300 focus:ring-blue-500"
+                      }`}
+                    />
+                  </div>
 
-                {/* Col 4: Auto-calc Liters Display */}
-                <div className="md:col-span-2">
-                  <div className="bg-slate-200/70 p-2.5 rounded-xl text-xs font-bold text-slate-700 text-center min-h-[40px] flex items-center justify-center">
-                    {p.off ? (
-                      <span className="text-slate-500">Maintenance</span>
+                  <div className="flex min-h-10 items-center justify-center rounded-xl bg-slate-200/70 p-2.5 text-center text-xs font-bold md:col-span-2">
+                    {unavailable ? (
+                      <span className="text-rose-600">Unavailable</span>
                     ) : invalid ? (
-                      <span className="text-rose-600 font-extrabold">Must be ≥ previous</span>
-                    ) : liters !== '' ? (
-                      <span className="text-blue-700 font-black text-sm">{liters} L</span>
+                      <span className="text-rose-600">
+                        Must be ≥ previous
+                      </span>
+                    ) : liters !== "" ? (
+                      <span className="text-blue-700">
+                        {formatNumber(liters)} L
+                      </span>
                     ) : (
-                      <span className="text-slate-400">Total Liters (Auto-calc)</span>
+                      <span className="text-slate-500">
+                        Dispensed Liters
+                      </span>
                     )}
                   </div>
-                </div>
 
-                {/* Col 5: Enter Start/End Meter Button */}
-                <div className="md:col-span-2">
-                  <button
-                    disabled={p.off}
-                    onClick={() => handleOpenSingleModal(p)}
-                    className={`w-full py-2.5 px-3 rounded-xl font-bold text-xs shadow-sm transition-all flex items-center justify-center gap-1.5 ${
-                      p.off
-                        ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                        : 'bg-cyan-500 hover:bg-cyan-600 text-white active:scale-95'
-                    }`}
-                  >
-                    <Gauge className="w-3.5 h-3.5" /> Enter Start/End Meter
-                  </button>
+                  <div className="md:col-span-2">
+                    <button
+                      type="button"
+                      disabled={unavailable || saving}
+                      onClick={() => handleOpenSingleModal(pump)}
+                      className="flex w-full items-center justify-center gap-2 rounded-xl bg-cyan-500 px-3 py-2.5 text-xs font-bold text-white hover:bg-cyan-600 disabled:cursor-not-allowed disabled:bg-slate-300"
+                    >
+                      <Gauge className="h-4 w-4" />
+                      Enter Reading
+                    </button>
+                  </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="border-b pb-3">
+          <h3 className="text-lg font-black text-slate-900">
+            Fuel Dispense Log & Recent Sales
+          </h3>
+          <p className="mt-1 text-xs font-semibold text-slate-500">
+            Latest records returned by the Fuel Sales API.
+          </p>
         </div>
-      </div>
-
-      {/* 2. Shift Dispense Log Table Section */}
-      <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 space-y-4">
-        <h3 className="text-lg font-black text-slate-900 border-b pb-3">
-          Shift Dispense Log & Recent Submissions <span className="text-slate-500 text-sm font-semibold">(Latest 9 Entries)</span>
-        </h3>
 
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead>
-              <tr className="bg-blue-600 text-white font-bold text-sm">
-                <th className="p-3 rounded-l-xl">Transaction ID</th>
+              <tr className="bg-blue-600 text-sm font-bold text-white">
+                <th className="rounded-l-xl p-3">Sale Number</th>
                 <th className="p-3">Pump</th>
                 <th className="p-3">Fuel Type</th>
                 <th className="p-3">Liters</th>
-                <th className="p-3">Amount (KHR)</th>
+                <th className="p-3">Amount</th>
                 <th className="p-3">Time</th>
                 <th className="p-3">Attendant</th>
-                <th className="p-3 rounded-r-xl text-center">Status</th>
+                <th className="rounded-r-xl p-3 text-center">Status</th>
               </tr>
             </thead>
+
             <tbody className="divide-y divide-slate-100 font-bold text-slate-700">
-              {logs.map((log) => (
-                <tr key={log.id} className="hover:bg-slate-50 transition-all">
-                  <td className="p-3 font-extrabold text-slate-900">{log.id}</td>
-                  <td className="p-3">{log.pump}</td>
-                  <td className="p-3">{log.fuel}</td>
-                  <td className="p-3 font-black text-blue-600">{log.liters}</td>
-                  <td className="p-3 font-black text-slate-900">{log.amount}</td>
-                  <td className="p-3 text-slate-500 font-semibold">{log.time}</td>
-                  <td className="p-3 text-slate-600">{log.attendant}</td>
-                  <td className="p-3 text-center">
-                    <span
-                      className={`px-3 py-1 rounded-full text-[11px] font-extrabold inline-block min-w-[90px] ${
-                        log.status === 'Complete'
-                          ? 'bg-emerald-100 text-emerald-700'
-                          : log.status === 'Pending'
-                          ? 'bg-amber-100 text-amber-700'
-                          : 'bg-rose-100 text-rose-700'
-                      }`}
-                    >
-                      {log.status}
-                    </span>
+              {!loading && logs.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={8}
+                    className="p-8 text-center font-semibold text-slate-500"
+                  >
+                    No fuel sales were returned by the API.
                   </td>
                 </tr>
-              ))}
+              ) : (
+                logs.map((log) => (
+                  <tr key={log.id} className="hover:bg-slate-50">
+                    <td className="p-3 font-extrabold text-slate-900">
+                      {log.saleNumber}
+                    </td>
+                    <td className="p-3">{log.pump}</td>
+                    <td className="p-3">{log.fuel}</td>
+                    <td className="p-3 font-black text-blue-600">
+                      {formatNumber(log.liters)} L
+                    </td>
+                    <td className="p-3 font-black text-slate-900">
+                      {formatNumber(log.amount, 2)}
+                    </td>
+                    <td className="p-3 text-slate-500">
+                      {formatDateTime(log.time)}
+                    </td>
+                    <td className="p-3">{log.attendant}</td>
+                    <td className="p-3 text-center">
+                      <span className="inline-block rounded-full bg-slate-100 px-3 py-1 text-[11px] font-extrabold text-slate-700">
+                        {log.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
-      </div>
+      </section>
 
-      {/* Single Pump Modal Form */}
       {activeModalPump && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
           <form
             onSubmit={handleSaveSingleModal}
-            className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl border border-slate-200 space-y-4 animate-in fade-in zoom-in duration-150"
+            className="w-full max-w-md space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl"
           >
-            <div className="flex justify-between items-center border-b pb-3">
-              <h3 className="font-black text-lg text-slate-900">Enter Start/End Meter</h3>
+            <div className="flex items-center justify-between border-b pb-3">
+              <h3 className="text-lg font-black text-slate-900">
+                Enter Meter Reading
+              </h3>
               <button
                 type="button"
                 onClick={() => setActiveModalPump(null)}
-                className="text-slate-400 hover:text-slate-600 font-bold text-lg"
+                className="text-slate-400 hover:text-slate-700"
+                aria-label="Close modal"
               >
-                ✕
+                <X className="h-5 w-5" />
               </button>
             </div>
 
-            <div className="space-y-3 text-xs font-bold">
-              <p className="text-slate-500">
-                Pump Name: <span className="text-slate-900 font-extrabold">{activeModalPump.id}</span>
-              </p>
+            <p className="text-sm font-semibold text-slate-600">
+              Pump:
+              <span className="ml-1 font-extrabold text-slate-900">
+                {activeModalPump.pumpNumber}
+              </span>
+            </p>
 
-              <div>
-                <label className="block text-slate-500 mb-1">Previous Meter Reading</label>
-                <input
-                  type="text"
-                  readOnly
-                  value={`${activeModalPump.prev.toLocaleString()} L`}
-                  className="w-full p-2.5 bg-slate-100 border border-slate-200 rounded-xl text-slate-600 font-bold cursor-not-allowed"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-700 mb-1">New Meter Reading</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  required
-                  autoFocus
-                  placeholder="Enter new reading..."
-                  value={modalMeterInput}
-                  onChange={(e) => setModalMeterInput(e.target.value)}
-                  className="w-full p-2.5 border border-slate-300 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                />
-              </div>
+            <div>
+              <label className="mb-1 block text-sm font-bold text-slate-600">
+                Previous Meter Reading
+              </label>
+              <input
+                readOnly
+                value={`${formatNumber(activeModalPump.prev)} L`}
+                className="w-full rounded-xl border border-slate-200 bg-slate-100 p-3 font-bold text-slate-600"
+              />
             </div>
 
-            <div className="flex justify-end gap-2 pt-3 border-t">
+            <div>
+              <label className="mb-1 block text-sm font-bold text-slate-700">
+                New Meter Reading
+              </label>
+              <input
+                autoFocus
+                required
+                type="number"
+                min={activeModalPump.prev}
+                step="0.001"
+                value={modalMeterInput}
+                onChange={(event) => setModalMeterInput(event.target.value)}
+                placeholder="Enter new meter reading"
+                className="w-full rounded-xl border border-slate-300 p-3 font-bold focus:outline-none focus:ring-2 focus:ring-cyan-500"
+              />
+              {modalMeterInput !== "" &&
+                Number(modalMeterInput) >= activeModalPump.prev && (
+                  <p className="mt-2 text-xs font-bold text-blue-700">
+                    Dispensed:{" "}
+                    {formatNumber(
+                      Number(modalMeterInput) - activeModalPump.prev
+                    )}{" "}
+                    L
+                  </p>
+                )}
+            </div>
+
+            <div className="flex justify-end gap-2 border-t pt-4">
               <button
                 type="button"
                 onClick={() => setActiveModalPump(null)}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-all"
+                className="rounded-xl bg-slate-100 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-200"
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                className="px-5 py-2 bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-xs rounded-xl shadow transition-all active:scale-95"
+                disabled={saving}
+                className="flex items-center gap-2 rounded-xl bg-cyan-600 px-5 py-2 text-sm font-bold text-white hover:bg-cyan-700 disabled:opacity-50"
               >
-                Save
+                {saving && (
+                  <LoaderCircle className="h-4 w-4 animate-spin" />
+                )}
+                Save Reading
               </button>
             </div>
           </form>
         </div>
       )}
-
     </div>
   );
 }

@@ -83,6 +83,7 @@ class CustomerController extends Controller
             'phone' => ['required', 'string', 'max:20'],
 
             'address' => ['nullable', 'string'],
+            'date_of_birth' => 'nullable|date|before_or_equal:today',
 
             'loyalty_membership' => [
                 'nullable',
@@ -189,6 +190,7 @@ class CustomerController extends Controller
                 'nullable',
                 'string',
             ],
+            'date_of_birth' => 'nullable|date|before_or_equal:today',
 
             'loyalty_membership' => [
                 'sometimes',
