@@ -203,7 +203,7 @@ export default function RefundManagement() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 bg-slate-300 p-6 -m-6">
       {/* Page heading */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>

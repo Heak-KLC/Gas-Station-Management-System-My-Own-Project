@@ -107,7 +107,6 @@ export default function Loyalty() {
         console.log("Customer API data:", customerList);
 console.log("First customer:", customerList[0]);
 
-setCustomers(customerList);
 
         setCustomers(customerList);
 
@@ -218,7 +217,7 @@ setCustomers(customerList);
   }, [filteredRows, selectedCustomer]);
 
   return (
-    <div className="space-y-4 bg-gray-400 p-6">
+    <div className="space-y-4 bg-slate-300 -m-6 p-6">
 
       {/* 1. Search Customer */}
       <Card title="Search customer">

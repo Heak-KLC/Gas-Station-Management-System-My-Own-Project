@@ -649,7 +649,7 @@ export default function DailySales() {
   const th = "px-3 py-2 text-left text-xs font-medium text-slate-600";
 
   return (
-    <div className="space-y-4 bg-gray-400 p-6">
+    <div className="space-y-4 bg-slate-300 -m-6 p-6">
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-white p-4">
         <div>
           <h2 className="text-lg font-bold text-slate-800">

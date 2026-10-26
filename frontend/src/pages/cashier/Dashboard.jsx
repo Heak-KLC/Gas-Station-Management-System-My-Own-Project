@@ -897,7 +897,7 @@ useEffect(() => {
   };
 
   return (
-    <div className="min-h-full bg-gray-100 p-4 md:p-6">
+    <div className="min-h-full bg-slate-300 p-6 md:p-6 -m-6">
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-xl font-bold text-slate-800">

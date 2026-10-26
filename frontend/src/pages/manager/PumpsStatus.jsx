@@ -373,6 +373,7 @@ function parseJsonValue(value) {
   }
 }
 
+
 function mapStatusLog(item) {
   const oldValue = parseJsonValue(item.old_value);
   const newValue = parseJsonValue(item.new_value);
@@ -380,7 +381,7 @@ function mapStatusLog(item) {
   const oldStatus = normalizeStatus(oldValue.status);
   const newStatus = normalizeStatus(newValue.status);
 
-  // Do not show logs that do not contain an actual status change.
+  // Show only actual status changes.
   if (
     oldStatus === "Unknown Status" ||
     newStatus === "Unknown Status" ||
@@ -391,6 +392,31 @@ function mapStatusLog(item) {
 
   const dateValue = item.created_at ?? item.updated_at;
   const date = dateValue ? new Date(dateValue) : null;
+
+  // Support different possible user relationship / API field names.
+  const user =
+    item.user ??
+    item.causer ??
+    item.changed_by ??
+    item.updated_by ??
+    item.actor ??
+    null;
+
+  const changedBy =
+    (typeof user === "string" ? user : null) ??
+    user?.full_name ??
+    user?.name ??
+    user?.username ??
+    user?.user_name ??
+    user?.employee_name ??
+    user?.employee?.full_name ??
+    user?.employee?.employee_name ??
+    item.user_name ??
+    item.username ??
+    item.changed_by_name ??
+    item.updated_by_name ??
+    item.causer_name ??
+    "Unknown user";
 
   return {
     id: item.log_id ?? item.id,
@@ -404,11 +430,7 @@ function mapStatusLog(item) {
     from: oldStatus,
     to: newStatus,
     reason: newValue.status_reason ?? "",
-    user:
-      item.user?.full_name ??
-      item.user?.username ??
-      item.causer?.name ??
-      "Unknown user",
+    user: changedBy,
     timestamp:
       date && !Number.isNaN(date.getTime())
         ? date.getTime()
@@ -419,6 +441,7 @@ function mapStatusLog(item) {
         : "Unknown date",
   };
 }
+
 
 function Modal({ title, onClose, children }) {
   return (
@@ -541,6 +564,7 @@ export default function PumpsStatus() {
     );
 
     const entries = getApiArray(response, "/activity-logs");
+    console.log("Activity logs API response:", entries);
 
     const history = entries
       .filter((item) => {
@@ -1210,7 +1234,7 @@ export default function PumpsStatus() {
 
   const Stat = ({ label, value, note, c }) => (
     <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
-      <p className="flex items-center gap-2 text-sm text-slate-500">
+      <p className="flex items-center gap-2 text-lg text-slate-600 font-bold">
         {c && <i className={`h-3 w-3 rounded-full ${c}`} />}
         {label}
       </p>
@@ -1240,7 +1264,7 @@ export default function PumpsStatus() {
   }
 
   return (
-    <div className="space-y-4 bg-gray-300 p-6">
+    <div className="space-y-4 bg-slate-300 -m-6 p-6">
       {/* HEADER */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>

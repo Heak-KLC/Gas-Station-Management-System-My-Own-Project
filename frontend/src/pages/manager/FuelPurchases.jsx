@@ -653,10 +653,10 @@ const submitReceive = async (e) => {
 
 
   const card = (title, value, note) => (
-    <div className="rounded-2xl bg-white p-5 text-center shadow-sm ring-1 ring-slate-100">
-      <p className="text-lg font-bold text-slate-900">{title}</p>
-      <p className="mt-2 text-slate-800">{value}</p>
-      <p className="mt-3 text-xs text-slate-500">{note}</p>
+    <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
+      <p className="text-xl font-bold px-3 text-slate-600">{title}</p>
+      <p className="px-7 mt-2 font-bold text-slate-900 text-2xl">{value}</p>
+      <p className="px-7 mt-3 text-xs text-slate-500">{note}</p>
     </div>
   );
 
@@ -665,7 +665,7 @@ const submitReceive = async (e) => {
   );
 
   return (
-    <div className="space-y-4 bg-gray-400 p-6">
+    <div className="space-y-4 bg-slate-300 -m-6 p-6">
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-xl font-bold text-slate-800">
           Purchases Summary

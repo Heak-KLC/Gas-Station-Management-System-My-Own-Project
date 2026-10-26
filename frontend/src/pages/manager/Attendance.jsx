@@ -1,5 +1,6 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { RefreshCw } from 'lucide-react';
 import {
   Stat,
   Table,
@@ -267,14 +268,8 @@ export default function Attendance() {
       }
 
       if (filters.employee !== 'All Employees') {
-        const employee = employees.find(
-          (item) => item.name === filters.employee
-        );
-
-        if (employee) {
-          params.set('employee_id', String(employee.id));
-        }
-      }
+  params.set('employee_id', String(filters.employee));
+}
 
       if (filters.status !== 'All Status') {
         params.set('status', STATUS_TO_API[filters.status]);
@@ -562,6 +557,11 @@ const handleReset = async () => {
   await loadAttendance(filters);
 };
 
+const handleRefresh = async () => {
+  setSuccessMessage('');
+  await loadAttendance(appliedFilters);
+};
+
 
   const employeeOptions = [
     'All Employees',
@@ -574,15 +574,31 @@ const handleReset = async () => {
 
   return (
     <div className="bg-gray-400 p-6">
-      <PageHeader
-        title="Employee Attendance"
-        sub="Track and manage employee daily attendance"
-        action={
-          <Btn v="gold" onClick={handleOpenAdd}>
-            + Add Attendance
-          </Btn>
-        }
-      />
+      
+<PageHeader
+  title="Employee Attendance"
+  sub="Track and manage employee daily attendance"
+  action={
+    <div style={{ display: 'flex', gap: '8px' }}>
+      <Btn
+        v="ghost"
+        onClick={handleRefresh}
+        disabled={loading}
+      >
+        <RefreshCw
+          size={16}
+          style={{ marginRight: '6px' }}
+        />
+        Refresh
+      </Btn>
+
+      <Btn v="gold" onClick={handleOpenAdd}>
+        + Add Attendance
+      </Btn>
+    </div>
+  }
+/>
+
 
       {errorMessage && (
         <div

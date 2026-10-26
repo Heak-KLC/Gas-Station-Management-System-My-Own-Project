@@ -11,21 +11,25 @@ class LoyaltyTransaction extends Model
 
     protected $table = 'loyalty_transactions';
 
-    protected $primaryKey = 'transaction_id';
+    protected $primaryKey = 'loyalty_id';
+
+    // This table has created_at but no updated_at.
+    public $timestamps = false;
 
     protected $fillable = [
         'customer_id',
+        'points_earned',
+        'points_used',
         'transaction_type',
-        'points',
-        'balance_after',
         'sale_id',
         'store_sale_id',
-        'description',
+        'created_at',
     ];
 
     protected $casts = [
-        'points' => 'integer',
-        'balance_after' => 'integer',
+        'customer_id' => 'integer',
+        'points_earned' => 'integer',
+        'points_used' => 'integer',
         'sale_id' => 'integer',
         'store_sale_id' => 'integer',
         'created_at' => 'datetime',

@@ -535,10 +535,10 @@ export default function FuelTanks() {
     <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
       <div className="flex items-start justify-between">
         <div>
-          <p className="text-lg font-bold text-slate-900">
+          <p className="text-lg font-bold text-slate-600">
             {label}
           </p>
-          <p className="mt-1 text-sm text-slate-700">
+          <p className="mt-1 text-2xl text-slate-900 font-bold">
             {value}
           </p>
         </div>
@@ -620,7 +620,7 @@ export default function FuelTanks() {
   // MAIN UI
   // ---------------------------------------------------
   return (
-    <div className="space-y-5 bg-gray-300 p-6">
+    <div className="space-y-5 bg-slate-300 -m-6 p-6">
       {/* HEADER */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-xl font-bold text-slate-800">
@@ -677,7 +677,7 @@ export default function FuelTanks() {
 
         {stat(
           "Active Tank",
-          `${activeTanks} / ${tanks.length}`,
+          `${activeTanks} / ${tanks.length}` ,
           "Operational",
           <Gauge
             size={34}

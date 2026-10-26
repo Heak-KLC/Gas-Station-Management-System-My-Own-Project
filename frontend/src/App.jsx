@@ -22,6 +22,8 @@ import EquipmentMaintenance from "./pages/EquipmentMaintenance";
 import MasterReports from "./pages/MasterReports";
 import Notifications from "./pages/Notifications";
 import Settings from "./pages/Settings";
+import SalaryManagement from "./pages/SalaryManagement";
+
 
 // ---------- Manager pages ----------
 import MgrDashboard from "./pages/manager/Dashboard";
@@ -109,6 +111,13 @@ const ROLES = {
         title: "Employee & Attendance",
         Component: EmployeeAttendance,
       },
+
+
+"salary-management": {
+  title: "Salary Management",
+  Component: SalaryManagement,
+},
+
 
       "equipment-maintenance": {
         title: "Equipment Maintenance",

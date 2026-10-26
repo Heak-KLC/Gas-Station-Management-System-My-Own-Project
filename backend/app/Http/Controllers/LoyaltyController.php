@@ -12,9 +12,9 @@ class LoyaltyController extends Controller
     {
         $query = Customer::query();
 
-        // Search by customer name or phone
+        // 1. Search by customer name or phone
         if ($request->filled('search')) {
-            $search = trim($request->search);
+            $search = trim($request->input('search'));
 
             $query->where(function ($q) use ($search) {
                 $q->where('full_name', 'like', "%{$search}%")
@@ -22,14 +22,16 @@ class LoyaltyController extends Controller
             });
         }
 
-        // Filter by loyalty tier
+        // 2. Filter by loyalty tier (case-insensitive)
         if (
             $request->filled('tier') &&
-            strtolower($request->tier) !== 'all'
+            strtolower(trim($request->input('tier'))) !== 'all'
         ) {
-            $query->where(
-                'loyalty_membership',
-                strtolower($request->tier)
+            $tier = strtolower(trim($request->input('tier')));
+
+            $query->whereRaw(
+                'LOWER(loyalty_membership) = ?',
+                [$tier]
             );
         }
 
@@ -39,11 +41,11 @@ class LoyaltyController extends Controller
 
         $data = $customers->map(function ($customer) {
 
-            // Paid fuel sales
+            // 3. Paid fuel sales
             $fuelSales = $customer->fuelSales()
                 ->where('payment_status', 'paid');
 
-            // Paid convenience-store sales
+            // 4. Paid convenience-store sales
             $storeSales = $customer->storeSales()
                 ->where('payment_status', 'paid');
 
@@ -56,7 +58,7 @@ class LoyaltyController extends Controller
             $storeSpent = (float) (clone $storeSales)
                 ->sum('total_amount');
 
-            // Latest paid sale dates
+            // 5. Latest paid fuel/store sale dates
             $fuelLastVisit = (clone $fuelSales)
                 ->max('sale_date');
 
@@ -72,16 +74,19 @@ class LoyaltyController extends Controller
                 ? null
                 : $dates->sortDesc()->first();
 
-            // Loyalty points history
-            $pointsEarned = (int) $customer
-                ->loyaltyTransactions()
+            // 6. Loyalty transaction history
+            $transactions = $customer->loyaltyTransactions();
+
+            $pointsEarned = (int) (clone $transactions)
                 ->sum('points_earned');
 
-            $pointsRedeemed = (int) $customer
-                ->loyaltyTransactions()
+            $pointsRedeemed = (int) (clone $transactions)
                 ->sum('points_used');
 
-            // Refunds associated with this customer's sales
+            // Current balance is stored in customers.loyalty_points
+            $pointsBalance = (int) ($customer->loyalty_points ?? 0);
+
+            // 7. Find approved refunds linked to customer sales
             $fuelSaleIds = $customer->fuelSales()
                 ->select('sale_id');
 
@@ -104,47 +109,52 @@ class LoyaltyController extends Controller
                 })
                 ->sum('refund_amount');
 
+            // 8. Total paid sales amount (before refunds)
+            $totalSpent = round(
+                $fuelSpent + $storeSpent,
+                2
+            );
+
+            // 9. Return data for Loyalty.jsx
             return [
-                'date_of_birth' => $customer->date_of_birth,
                 'id' => $customer->customer_id,
                 'customer_id' => $customer->customer_id,
-                'full_name' => $customer->full_name,
+
                 'customer_code' => $customer->customer_code,
+                'full_name' => $customer->full_name,
                 'phone' => $customer->phone,
                 'email' => $customer->email,
                 'address' => $customer->address,
 
+                'date_of_birth' => $customer->date_of_birth,
+                'dob' => $customer->date_of_birth,
+                'memberSince' => $customer->registered_at,
+
                 'tier' => strtoupper(
                     $customer->loyalty_membership ?? 'none'
                 ),
+
                 'loyalty_membership' =>
                     $customer->loyalty_membership,
 
-                'points' => (int) $customer->loyalty_points,
-                'loyalty_points' =>
-                    (int) $customer->loyalty_points,
+                // Current points balance
+                'points' => $pointsBalance,
+                'loyalty_points' => $pointsBalance,
 
-                'lastVisit' => $lastVisit,
-                'lastPurchase' => $lastVisit,
-
-                'totalPurchases' => $fuelCount + $storeCount,
-                'totalSpent' => round(
-                    $fuelSpent + $storeSpent,
-                    2
-                ),
-
-                'memberSince' => $customer->registered_at,
-
-                // Requires a DOB column in the database
-                'dob' => $customer->date_of_birth,
-
+                // Historical points totals
                 'pointsEarned' => $pointsEarned,
                 'pointsRedeemed' => $pointsRedeemed,
 
-                'active' => $customer->is_active ? 'Yes' : 'No',
-                'is_active' => $customer->is_active,
-
+                // Purchase information
+                'lastVisit' => $lastVisit,
+                'lastPurchase' => $lastVisit,
+                'totalPurchases' => $fuelCount + $storeCount,
+                'totalSpent' => $totalSpent,
                 'totalRefund' => round($totalRefund, 2),
+
+                // Customer status
+                'active' => $customer->is_active ? 'Yes' : 'No',
+                'is_active' => (bool) $customer->is_active,
             ];
         });
 

@@ -767,7 +767,7 @@ export default function ShiftHandover() {
   // --------------------------------------------------
 
   return (
-    <div className="space-y-5 text-slate-800">
+    <div className="space-y-5 text-slate-800 bg-slate-300 -m-6 p-6">
       {/* Error message */}
       {error && (
         <div

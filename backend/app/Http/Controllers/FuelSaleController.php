@@ -11,6 +11,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use App\Models\Shift;
+use App\Models\Customer;
+use App\Models\LoyaltyTransaction;
 
 class FuelSaleController extends Controller
 {
@@ -276,6 +278,7 @@ if (!in_array($role, $allowedRoles, true)) {
     }
 
     $createdSales = [];
+    $totalSpentForPoints = 0;
 
         foreach ($validated['items'] as $item) {
             $fuel = FuelType::where(
@@ -344,10 +347,53 @@ if (!in_array($role, $allowedRoles, true)) {
 
             $fuel->save();
 
-            $createdSales[] = $sale;
+            
+$createdSales[] = $sale;
+
+// Accumulate the total purchase amount in this checkout.
+$totalSpentForPoints += (float) $sale->total_amount;
+
+
+        }
+
+        // Award loyalty points once per checkout.
+        $customerId = $validated['customer_id'] ?? null;
+
+        if ($customerId !== null) {
+            $customer = Customer::where(
+                'customer_id',
+                $customerId
+            )->lockForUpdate()->firstOrFail();
+
+            // $1 spent = 1 point.
+            // Ignore fractional dollars.
+            $pointsEarned = (int) floor(
+                $totalSpentForPoints
+            );
+
+            if ($pointsEarned > 0) {
+                $newBalance =
+                    (int) $customer->loyalty_points
+                    + $pointsEarned;
+
+                $customer->loyalty_points = $newBalance;
+                $customer->save();
+
+                LoyaltyTransaction::create([
+                    'customer_id' => $customer->customer_id,
+                    'points_earned' => $pointsEarned,
+                    'points_used' => 0,
+                    'transaction_type' => 'earned',
+
+                    // Link to the first sale in this checkout.
+                    'sale_id' => $createdSales[0]->sale_id,
+                    'store_sale_id' => null,
+                ]);
+            }
         }
 
         return $createdSales;
+
     });
 
     return response()->json([

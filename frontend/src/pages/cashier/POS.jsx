@@ -1,4 +1,3 @@
-
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import StorePOS from "./StorePOS";
 import { ShoppingCart } from "lucide-react";
@@ -660,7 +659,7 @@ if (saleMode === "store") {
 }
 
   return (
-    <div className="p-6 bg-gray-400 min-h-screen text-slate-800 space-y-4 font-sans select-none">
+    <div className="p-6 -m-6 bg-slate-300 min-h-screen text-slate-800 space-y-4 font-sans select-none">
 
       <div className="flex flex-wrap items-center gap-3">
   <button
@@ -685,6 +684,49 @@ if (saleMode === "store") {
     Store Sale
   </button>
 </div>
+
+
+{/* Bottom action bar */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-2">
+        <button
+          type="button"
+          onClick={handleNewSale}
+          disabled={savingSale}
+          className="py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold shadow-md transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+        >
+          <Plus className="w-4 h-4" /> New Sale
+        </button>
+
+        <button
+          type="button"
+          onClick={handleHoldSale}
+          disabled={savingSale}
+          className="py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-bold shadow-md transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+        >
+          <Pause className="w-4 h-4" /> Hold Sale
+        </button>
+
+        <button
+          type="button"
+          onClick={handleCancelSale}
+          disabled={savingSale}
+          className="py-3 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold shadow-md transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+        >
+          <X className="w-4 h-4" /> Cancel Sale
+        </button>
+
+        <button
+          type="button"
+          onClick={handleCompleteSale}
+          disabled={savingSale || loadingOptions}
+          className="py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold shadow-md transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+        >
+          {savingSale
+            ? <LoaderCircle className="w-4 h-4 animate-spin" />
+            : <Check className="w-4 h-4" />}
+          {savingSale ? 'Processing...' : 'Complete Sale'}
+        </button>
+      </div>
 
       {toastMessage && (
         <div
@@ -1005,6 +1047,58 @@ if (saleMode === "store") {
                 />
               </div>
             </div>
+            {/* Payment */}
+          <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 space-y-3">
+            <h4 className="font-bold text-xs uppercase text-slate-500 tracking-wider">
+              Payment Method
+            </h4>
+
+            <div className="grid grid-cols-3 gap-2">
+              {PAYMENTS.map((payment) => {
+                const Icon = payment.icon;
+                const isSelected = paymentMethod === payment.id;
+
+                return (
+                  <button
+                    key={payment.id}
+                    type="button"
+                    onClick={() => setPaymentMethod(payment.id)}
+                    className={`p-2.5 rounded-xl border text-xs font-bold flex flex-col items-center gap-1 transition-all ${
+                      isSelected
+                        ? 'bg-blue-50 border-blue-600 text-blue-600 shadow-sm'
+                        : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    <Icon className="w-4 h-4" />
+                    <span>{payment.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div
+              onClick={() => setActiveFocus('received')}
+              className={`p-2.5 rounded-xl border flex justify-between items-center cursor-pointer transition-all ${
+                activeFocus === 'received'
+                  ? 'bg-blue-50 border-blue-500 ring-2 ring-blue-500/20'
+                  : 'bg-slate-50 border-slate-200'
+              }`}
+            >
+              <span className="text-xs font-bold text-slate-500">
+                Received Amount:
+              </span>
+              <span className="text-base font-extrabold text-slate-800">
+                ${money(receivedAmount)}
+              </span>
+            </div>
+
+            <div className="flex justify-between items-center text-xs font-bold">
+              <span className="text-slate-500">Change:</span>
+              <span className="text-emerald-600 text-sm">
+                ${money(change)}
+              </span>
+            </div>
+          </div>
           </div>
         </div>
 
@@ -1140,58 +1234,7 @@ if (saleMode === "store") {
             </div>
           </div>
 
-          {/* Payment */}
-          <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 space-y-3">
-            <h4 className="font-bold text-xs uppercase text-slate-500 tracking-wider">
-              Payment Method
-            </h4>
-
-            <div className="grid grid-cols-3 gap-2">
-              {PAYMENTS.map((payment) => {
-                const Icon = payment.icon;
-                const isSelected = paymentMethod === payment.id;
-
-                return (
-                  <button
-                    key={payment.id}
-                    type="button"
-                    onClick={() => setPaymentMethod(payment.id)}
-                    className={`p-2.5 rounded-xl border text-xs font-bold flex flex-col items-center gap-1 transition-all ${
-                      isSelected
-                        ? 'bg-blue-50 border-blue-600 text-blue-600 shadow-sm'
-                        : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
-                    }`}
-                  >
-                    <Icon className="w-4 h-4" />
-                    <span>{payment.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-
-            <div
-              onClick={() => setActiveFocus('received')}
-              className={`p-2.5 rounded-xl border flex justify-between items-center cursor-pointer transition-all ${
-                activeFocus === 'received'
-                  ? 'bg-blue-50 border-blue-500 ring-2 ring-blue-500/20'
-                  : 'bg-slate-50 border-slate-200'
-              }`}
-            >
-              <span className="text-xs font-bold text-slate-500">
-                Received Amount:
-              </span>
-              <span className="text-base font-extrabold text-slate-800">
-                ${money(receivedAmount)}
-              </span>
-            </div>
-
-            <div className="flex justify-between items-center text-xs font-bold">
-              <span className="text-slate-500">Change:</span>
-              <span className="text-emerald-600 text-sm">
-                ${money(change)}
-              </span>
-            </div>
-          </div>
+          
 
           {/* Numpad */}
           <div className="bg-white p-3 rounded-2xl shadow-sm border border-slate-200">
@@ -1224,47 +1267,7 @@ if (saleMode === "store") {
         </div>
       </div>
 
-      {/* Bottom action bar */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-2">
-        <button
-          type="button"
-          onClick={handleNewSale}
-          disabled={savingSale}
-          className="py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold shadow-md transition-all flex items-center justify-center gap-2 disabled:opacity-50"
-        >
-          <Plus className="w-4 h-4" /> New Sale
-        </button>
-
-        <button
-          type="button"
-          onClick={handleHoldSale}
-          disabled={savingSale}
-          className="py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-bold shadow-md transition-all flex items-center justify-center gap-2 disabled:opacity-50"
-        >
-          <Pause className="w-4 h-4" /> Hold Sale
-        </button>
-
-        <button
-          type="button"
-          onClick={handleCancelSale}
-          disabled={savingSale}
-          className="py-3 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold shadow-md transition-all flex items-center justify-center gap-2 disabled:opacity-50"
-        >
-          <X className="w-4 h-4" /> Cancel Sale
-        </button>
-
-        <button
-          type="button"
-          onClick={handleCompleteSale}
-          disabled={savingSale || loadingOptions}
-          className="py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold shadow-md transition-all flex items-center justify-center gap-2 disabled:opacity-50"
-        >
-          {savingSale
-            ? <LoaderCircle className="w-4 h-4 animate-spin" />
-            : <Check className="w-4 h-4" />}
-          {savingSale ? 'Processing...' : 'Complete Sale'}
-        </button>
-      </div>
+      
 
       {/* Modals */}
       {activeModal && (

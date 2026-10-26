@@ -184,8 +184,11 @@ async function apiRequest(path, options = {}) {
     }
 
     if (response.status === 404) {
-      throw new Error(`Not found API: ${path}`);
-    }
+  throw new Error(
+    result?.message ||
+      `The requested resource was not found: ${path}`
+  );
+}
 
     if (response.status === 422) {
       const validationMessages = Object.values(
@@ -371,6 +374,7 @@ export default function Dashboard({ onNavigate }) {
 
 
 
+  
   // ---------------------------------------------------
   // Shift Tracking API
   // ---------------------------------------------------
@@ -383,6 +387,7 @@ export default function Dashboard({ onNavigate }) {
       setCurrentShift(result?.data ?? null);
     } catch (error) {
       console.error("Load current shift error:", error);
+
       triggerToast(
         error.message || "Unable to retrieve Current Shift.",
         "error"
@@ -396,6 +401,16 @@ export default function Dashboard({ onNavigate }) {
     loadCurrentShift();
   }, [loadCurrentShift]);
 
+  // Re-fetch the authoritative shift state without changing the
+  // loading flag. Use this inside Start/End handlers.
+  const refreshShiftFromServer = async () => {
+    const result = await apiRequest("/shifts/current");
+    const shift = result?.data ?? null;
+
+    setCurrentShift(shift);
+    return shift;
+  };
+
   // Start Shift
   const handleStartShift = async () => {
     if (shiftLoading) return;
@@ -407,7 +422,8 @@ export default function Dashboard({ onNavigate }) {
         method: "POST",
       });
 
-      setCurrentShift(result?.data ?? null);
+      // Read the actual state from Laravel after starting.
+      await refreshShiftFromServer();
 
       triggerToast(
         result?.message || "Successfully started the work shift."
@@ -420,10 +436,10 @@ export default function Dashboard({ onNavigate }) {
         "error"
       );
 
-      // Load again in case a shift already exists.
+      // Recover the current state if the request failed or the
+      // response was interrupted after Laravel processed it.
       try {
-        const result = await apiRequest("/shifts/current");
-        setCurrentShift(result?.data ?? null);
+        await refreshShiftFromServer();
       } catch (reloadError) {
         console.error("Reload shift error:", reloadError);
       }
@@ -437,7 +453,7 @@ export default function Dashboard({ onNavigate }) {
     if (shiftLoading || !currentShift) return;
 
     const confirmed = window.confirm(
-      "Are you sure, Do you want to end shift?"
+      "Are you sure you want to end your current shift?"
     );
 
     if (!confirmed) return;
@@ -449,11 +465,19 @@ export default function Dashboard({ onNavigate }) {
         method: "POST",
       });
 
-      setCurrentShift(null);
+      // Confirm the final state using the Laravel API.
+      const latestShift = await refreshShiftFromServer();
 
-      triggerToast(
-        result?.message || "Successfully completed the work shift."
-      );
+      if (latestShift) {
+        triggerToast(
+          "The shift-end request succeeded, but Laravel still reports an active shift.",
+          "error"
+        );
+      } else {
+        triggerToast(
+          result?.message || "Successfully completed the work shift."
+        );
+      }
     } catch (error) {
       console.error("End shift error:", error);
 
@@ -463,8 +487,7 @@ export default function Dashboard({ onNavigate }) {
       );
 
       try {
-        const latest = await apiRequest("/shifts/current");
-        setCurrentShift(latest?.data ?? null);
+        await refreshShiftFromServer();
       } catch (reloadError) {
         console.error("Reload shift error:", reloadError);
       }
@@ -472,6 +495,7 @@ export default function Dashboard({ onNavigate }) {
       setShiftLoading(false);
     }
   };
+
 
 
   // ---------------------------------------------------

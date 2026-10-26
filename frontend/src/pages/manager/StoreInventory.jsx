@@ -531,28 +531,61 @@ export default function StoreInventory() {
     setModal({ type: "qty", action, id });
   };
 
-  const submitQty = async (event) => {
-    event.preventDefault();
+  
+const submitQty = async (event) => {
+  event.preventDefault();
 
-    if (!selectedProduct || !modal?.action) return;
+  if (!selectedProduct || !modal?.action) return;
 
-    const action = ACTIONS[modal.action];
-    const quantity = Number(qty);
+  const action = ACTIONS[modal.action];
+  const quantity = Number(qty);
 
-    if (!Number.isInteger(quantity) || quantity <= 0) {
-      setError("Please enter a whole number greater than 0.");
-      return;
-    }
+  if (!Number.isInteger(quantity) || quantity <= 0) {
+    setError("Please enter a whole number greater than 0.");
+    return;
+  }
 
-    if (action.sign < 0 && quantity > selectedProduct.stock) {
-      setError(`Only ${selectedProduct.stock} items are in stock.`);
-      return;
-    }
+  if (action.sign < 0 && quantity > selectedProduct.stock) {
+    setError(`Only ${selectedProduct.stock} items are in stock.`);
+    return;
+  }
 
-    setSaving(true);
-    setError("");
+  setSaving(true);
+  setError("");
 
-    try {
+  try {
+    if (modal.action === "sale") {
+      // Record the sale through StoreSaleController.
+      // The backend will save the sale and reduce stock
+      // in one database transaction.
+      const response = await apiRequest("/store-sales", {
+        method: "POST",
+        body: JSON.stringify({
+          payment_method: "cash",
+          payment_status: "paid",
+          discount: 0,
+          items: [
+            {
+              product_id: selectedProduct.id,
+              quantity,
+              discount: 0,
+            },
+          ],
+        }),
+      });
+
+      const sale = response?.sale ?? response?.data ?? response;
+
+      setModal(null);
+      setQty("");
+
+      setToast(
+        `Sale recorded successfully: ${selectedProduct.name} × ${quantity}${
+          sale?.sale_number ? ` (${sale.sale_number})` : ""
+        }`
+      );
+    } else {
+      // Keep Restock and Mark damage unchanged.
       await apiRequest(
         `/products/${selectedProduct.id}/adjust-inventory`,
         {
@@ -565,19 +598,24 @@ export default function StoreInventory() {
       );
 
       setModal(null);
+      setQty("");
+
       setToast(
         `${action.label}: ${selectedProduct.name} ${
           action.sign > 0 ? "+" : "-"
         }${quantity}`
       );
-
-      await loadData(false);
-    } catch (err) {
-      setError(err.message || "Unable to update stock.");
-    } finally {
-      setSaving(false);
     }
-  };
+
+    // Reload current stock and inventory activity from Laravel.
+    await loadData(false);
+  } catch (err) {
+    setError(err.message || "Unable to complete the operation.");
+  } finally {
+    setSaving(false);
+  }
+};
+
 
   const submitAdd = async (event) => {
     event.preventDefault();
@@ -701,7 +739,7 @@ export default function StoreInventory() {
   };
 
   return (
-    <div className="min-h-screen space-y-6 bg-gray-300 p-4 md:p-6">
+    <div className="min-h-screen space-y-6 bg-slate-300 p-4 md:p-6 -m-6">
       {/* Header */}
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div className="flex items-center gap-2">

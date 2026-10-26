@@ -864,7 +864,7 @@ export default function BranchReports() {
   };
 
   return (
-    <div className="min-h-full space-y-4 bg-gray-400 p-4 md:p-6">
+    <div className="min-h-full space-y-4 bg-slate-300 p-4 md:p-6 -m-6">
       {/* Page header */}
       <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
         <div className="flex items-center gap-4">

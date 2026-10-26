@@ -29,6 +29,7 @@ use App\Http\Controllers\ShiftHandoverController;
 use App\Http\Controllers\CashierDashboardController;
 use App\Http\Controllers\LoyaltyController;
 use App\Http\Controllers\ShiftController;
+use App\Http\Controllers\SalaryPaymentController;
 
 
 
@@ -606,3 +607,41 @@ Route::middleware('auth:sanctum')
         Route::post('/end', [ShiftController::class, 'end']);
     });
 
+
+/*
+|--------------------------------------------------------------------------
+| SALARY MANAGEMENT API
+|--------------------------------------------------------------------------
+| All routes require Sanctum authentication.
+| SalaryPaymentController additionally enforces Admin-only access.
+*/
+
+Route::middleware('auth:sanctum')->prefix('salary-payments')->group(function () {
+    Route::get('/', [SalaryPaymentController::class, 'index']);
+    Route::post('/', [SalaryPaymentController::class, 'store']);
+
+    Route::get('/{salaryPaymentId}', [
+        SalaryPaymentController::class,
+        'show',
+    ])->whereNumber('salaryPaymentId');
+
+    Route::put('/{salaryPaymentId}', [
+        SalaryPaymentController::class,
+        'update',
+    ])->whereNumber('salaryPaymentId');
+
+    Route::patch('/{salaryPaymentId}/approve', [
+        SalaryPaymentController::class,
+        'approve',
+    ])->whereNumber('salaryPaymentId');
+
+    Route::patch('/{salaryPaymentId}/reject', [
+        SalaryPaymentController::class,
+        'reject',
+    ])->whereNumber('salaryPaymentId');
+
+    Route::patch('/{salaryPaymentId}/mark-paid', [
+        SalaryPaymentController::class,
+        'markPaid',
+    ])->whereNumber('salaryPaymentId');
+});

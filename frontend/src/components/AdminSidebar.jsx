@@ -9,6 +9,7 @@ import {
   Truck,
   Users,
   UserCheck,
+  Wallet,
   Wrench,
   FileBarChart,
   Bell,
@@ -18,22 +19,81 @@ import {
 
 const NAV_SECTIONS = [
   {
-    items: [{ key: "dashboard", label: "Dashboard", icon: LayoutDashboard }],
+    items: [
+      {
+        key: "dashboard",
+        label: "Dashboard",
+        icon: LayoutDashboard,
+      },
+    ],
   },
   {
     items: [
-      { key: "fuel-management", label: "Fuel Management", icon: Fuel },
-      { key: "fuel-tanks", label: "Fuel Tanks", icon: Database },
-      { key: "fuel-pumps", label: "Fuel Pumps", icon: Gauge },
-      { key: "convenience-store", label: "Convenience Store", icon: ShoppingBag },
-      { key: "pos-sales-history", label: "POS & Sales History", icon: Receipt },
-      { key: "suppliers-purchases", label: "Suppliers & Purchases", icon: Truck },
-      { key: "customer-loyalty", label: "Customer & Loyalty", icon: Users },
-      { key: "employee-attendance", label: "Employee & Attendance", icon: UserCheck },
-      { key: "equipment-maintenance", label: "Equipment Maintenance", icon: Wrench },
-      { key: "master-reports", label: "Master Reports", icon: FileBarChart },
-      { key: "notifications", label: "Notifications", icon: Bell },
-      { key: "settings", label: "Settings", icon: Settings },
+      {
+        key: "fuel-management",
+        label: "Fuel Management",
+        icon: Fuel,
+      },
+      {
+        key: "fuel-tanks",
+        label: "Fuel Tanks",
+        icon: Database,
+      },
+      {
+        key: "fuel-pumps",
+        label: "Fuel Pumps",
+        icon: Gauge,
+      },
+      {
+        key: "convenience-store",
+        label: "Convenience Store",
+        icon: ShoppingBag,
+      },
+      {
+        key: "pos-sales-history",
+        label: "POS & Sales History",
+        icon: Receipt,
+      },
+      {
+        key: "suppliers-purchases",
+        label: "Suppliers & Purchases",
+        icon: Truck,
+      },
+      {
+        key: "customer-loyalty",
+        label: "Customer & Loyalty",
+        icon: Users,
+      },
+      {
+        key: "employee-attendance",
+        label: "Employee & Attendance",
+        icon: UserCheck,
+      },
+      {
+        key: "salary-management",
+        label: "Salary Management",
+        icon: Wallet,
+      },
+      {
+        key: "equipment-maintenance",
+        label: "Equipment Maintenance",
+        icon: Wrench,
+      },
+      {
+        key: "master-reports",
+        label: "Master Reports",
+        icon: FileBarChart,
+      },
+      {
+        key: "notifications",
+        label: "Notifications",
+        icon: Bell,
+      },
+      {
+        key: "settings",
+        label: "Settings",
+        icon: Settings,
+      },
     ],
   },
 ];
@@ -54,6 +114,7 @@ export default function Sidebar({
         />
       </div>
 
+      {/* Navigation */}
       <nav className="flex-1 space-y-6 overflow-y-auto px-3 pb-4">
         {NAV_SECTIONS.map((section, i) => (
           <div key={i} className="space-y-0.5">

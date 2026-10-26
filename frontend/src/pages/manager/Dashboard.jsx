@@ -252,6 +252,8 @@ export default function Dashboard({ onNavigate = () => {} }) {
 
   // ប្រវត្តិការលក់ទាំងអស់សម្រាប់តារាង។
   const [fuelSales, setFuelSales] = useState([]);
+  const [currentPage, setCurrentPage] = useState(1);
+const rowsPerPage = 5;
 
   // ការលក់ថ្ងៃនេះសម្រាប់កាតស្ថិតិ។
   const [todayFuelSales, setTodayFuelSales] = useState([]);
@@ -311,14 +313,25 @@ export default function Dashboard({ onNavigate = () => {} }) {
         run: () => api.get("/products"),
         save: (response) => setProducts(getArray(response.data)),
       },
-      {
-        label: "Attendance",
-        run: () =>
-          api.get("/employee-attendances", {
-            params: { date: today },
-          }),
-        save: (response) => setAttendance(getArray(response.data)),
-      },
+      
+{
+  label: "Attendance",
+  run: () =>
+    api.get("/employee-attendances", {
+      params: { date: today },
+    }),
+  save: (response) => {
+    console.log("Attendance API response:", response.data);
+    console.log("Today's date:", today);
+
+    const records = getArray(response.data);
+
+    console.log("Attendance records:", records);
+
+    setAttendance(records);
+  },
+},
+
       {
         label: "Notifications",
         run: () => api.get("/notifications"),
@@ -414,6 +427,30 @@ export default function Dashboard({ onNavigate = () => {} }) {
       });
   }, [fuelSales, pay, query]);
 
+
+  const totalPages = Math.ceil(
+  fuelRows.length / rowsPerPage
+);
+
+const paginatedFuelRows = useMemo(() => {
+  const startIndex = (currentPage - 1) * rowsPerPage;
+
+  return fuelRows.slice(
+    startIndex,
+    startIndex + rowsPerPage
+  );
+}, [fuelRows, currentPage]);
+
+const startRow =
+  fuelRows.length === 0
+    ? 0
+    : (currentPage - 1) * rowsPerPage + 1;
+
+const endRow = Math.min(
+  currentPage * rowsPerPage,
+  fuelRows.length
+);
+
   // ស្ថិតិ Fuel គិតតែការលក់ថ្ងៃនេះដែល Paid។
   const paidFuelSales = useMemo(
     () => todayFuelSales.filter(isPaid),
@@ -486,13 +523,20 @@ export default function Dashboard({ onNavigate = () => {} }) {
   const lowStockCount = lowFuelTanks.length + lowStockProducts.length;
 
   // រាប់ Attendance តាម status ដែល API ផ្ញើមក។
-  const attendanceCounts = ATTENDANCE_CONFIG.map((item) => ({
-    ...item,
-    count: attendance.filter(
-      (record) =>
-        String(record.status || "").toLowerCase() === item.key
-    ).length,
-  }));
+  
+const normalizeAttendanceStatus = (status) =>
+  String(status || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+
+const attendanceCounts = ATTENDANCE_CONFIG.map((item) => ({
+  ...item,
+  count: attendance.filter(
+    (record) =>
+      normalizeAttendanceStatus(record.status) === item.key
+  ).length,
+}));
 
   const totalEmployeesPresentInAttendance = attendance.length;
 
@@ -557,7 +601,7 @@ export default function Dashboard({ onNavigate = () => {} }) {
   };
 
   return (
-    <div className="space-y-4 bg-gray-300 p-6">
+    <div className="space-y-4 bg-slate-300 p-6 -m-6">
       {/* Dashboard header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-xl font-bold text-slate-800">
@@ -715,7 +759,7 @@ export default function Dashboard({ onNavigate = () => {} }) {
                     </tr>
                   ) : (
                     <>
-                      {fuelRows.map((sale, index) => (
+                      {paginatedFuelRows.map((sale, index) => (
                         <tr
                           key={sale.id ?? index}
                           className="border-b border-slate-100 last:border-0 hover:bg-slate-50"
@@ -753,6 +797,69 @@ export default function Dashboard({ onNavigate = () => {} }) {
                 </tbody>
               </table>
             </div>
+            <div className="flex flex-col gap-3 border-t border-gray-100 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+  <p className="text-sm text-gray-500">
+    Showing{" "}
+    <span className="font-medium text-gray-700">
+      {startRow}
+    </span>
+    {" "}to{" "}
+    <span className="font-medium text-gray-700">
+      {endRow}
+    </span>
+    {" "}of{" "}
+    <span className="font-medium text-gray-700">
+      {fuelRows.length}
+    </span>
+    {" "}results
+  </p>
+
+  <div className="flex items-center gap-1">
+    <button
+      type="button"
+      onClick={() =>
+        setCurrentPage((page) => Math.max(1, page - 1))
+      }
+      disabled={currentPage === 1}
+      className="rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-600 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+    >
+      Previous
+    </button>
+
+    {Array.from(
+      { length: totalPages },
+      (_, index) => index + 1
+    ).map((page) => (
+      <button
+        key={page}
+        type="button"
+        onClick={() => setCurrentPage(page)}
+        className={`min-w-9 rounded-lg border px-3 py-2 text-sm transition ${
+          currentPage === page
+            ? "border-indigo-600 bg-indigo-600 text-white"
+            : "border-gray-200 text-gray-600 hover:bg-gray-50"
+        }`}
+      >
+        {page}
+      </button>
+    ))}
+
+    <button
+      type="button"
+      onClick={() =>
+        setCurrentPage((page) =>
+          Math.min(totalPages, page + 1)
+        )
+      }
+      disabled={
+        currentPage >= totalPages || totalPages === 0
+      }
+      className="rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-600 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+    >
+      Next
+    </button>
+  </div>
+</div>
           </section>
 
           {/* Pumps Status */}
