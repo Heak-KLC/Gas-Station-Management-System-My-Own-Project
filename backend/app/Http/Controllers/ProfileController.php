@@ -4,50 +4,37 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 
 class ProfileController extends Controller
 {
     /**
-     * GET /api/profile
-     * បង្ហាញព័ត៌មានរបស់អ្នកប្រើប្រាស់ដែលបាន Login។
+     * Return the authenticated user's profile.
      */
     public function show(Request $request)
     {
-        // ទាញយកតែ User ដែលបានផ្ទៀងផ្ទាត់ដោយ Sanctum។
         $user = $request->user();
 
         return response()->json([
             'success' => true,
-            'data' => [
-                'user_id' => $user->user_id,
-                'username' => $user->username,
-                'full_name' => $user->full_name,
-                'email' => $user->email,
-                'role' => $user->role,
-                'employee_id' => $user->employee_id,
-                'is_active' => $user->is_active,
-                'last_login' => $user->last_login,
-            ],
+            'data' => $this->profileData($user),
         ]);
     }
 
     /**
-     * PUT /api/profile
-     * កែព័ត៌មានរបស់គណនីដែលបាន Login។
+     * Update profile information and optionally upload an avatar.
      */
     public function update(Request $request)
     {
-        // កំណត់ User បច្ចុប្បន្ន មិនទទួល user_id ពី Frontend ទេ។
         $user = $request->user();
 
-        // Validate តែព័ត៌មានដែលអនុញ្ញាតឱ្យកែ។
         $validated = $request->validate([
             'username' => [
                 'sometimes',
                 'required',
                 'string',
-                'max:100',
+                'max:50',
                 Rule::unique('users', 'username')
                     ->ignore($user->user_id, 'user_id'),
             ],
@@ -55,44 +42,71 @@ class ProfileController extends Controller
                 'sometimes',
                 'required',
                 'string',
-                'max:255',
+                'max:100',
             ],
             'email' => [
                 'sometimes',
                 'required',
                 'email',
-                'max:255',
+                'max:100',
                 Rule::unique('users', 'email')
                     ->ignore($user->user_id, 'user_id'),
             ],
+            'avatar' => [
+                'sometimes',
+                'nullable',
+                'image',
+                'mimes:jpg,jpeg,png,webp',
+                'max:2048',
+            ],
         ]);
 
-        // រក្សាទុកតែ fields ដែលបាន Validate។
-        $user->fill($validated);
-        $user->save();
+        // Update text fields only.
+        $user->fill(collect($validated)->only([
+            'username',
+            'full_name',
+            'email',
+        ])->all());
+
+        // Store a new avatar if one was uploaded.
+        if ($request->hasFile('avatar')) {
+            $path = $request->file('avatar')
+                ->store('profile-photos', 'public');
+
+            if (!$path) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unable to store profile photo.',
+                ], 500);
+            }
+
+            // Delete the old photo after the new one is stored.
+            $oldPath = $user->avatar_path;
+
+            $user->avatar_path = $path;
+            $user->save();
+
+            if ($oldPath) {
+                Storage::disk('public')->delete($oldPath);
+            }
+        } else {
+            $user->save();
+        }
 
         return response()->json([
             'success' => true,
             'message' => 'Profile updated successfully.',
-            'data' => [
-                'user_id' => $user->user_id,
-                'username' => $user->username,
-                'full_name' => $user->full_name,
-                'email' => $user->email,
-                'role' => $user->role,
-            ],
+            'data' => $this->profileData($user->fresh()),
         ]);
     }
 
     /**
-     * POST /api/change-password
-     * ប្ដូរពាក្យសម្ងាត់របស់គណនីដែលបាន Login។
+     * Change the authenticated user's password.
      */
     public function changePassword(Request $request)
     {
         $user = $request->user();
 
-        // Validate ពាក្យសម្ងាត់ចាស់ និងពាក្យសម្ងាត់ថ្មី។
         $validated = $request->validate([
             'current_password' => [
                 'required',
@@ -107,7 +121,6 @@ class ProfileController extends Controller
             ],
         ]);
 
-        // ផ្ទៀងផ្ទាត់ពាក្យសម្ងាត់ចាស់ជាមួយ password_hash។
         if (!Hash::check(
             $validated['current_password'],
             $user->password_hash
@@ -123,7 +136,6 @@ class ProfileController extends Controller
             ], 422);
         }
 
-        // Hash ពាក្យសម្ងាត់ថ្មី មុនរក្សាទុកក្នុង Database។
         $user->password_hash = Hash::make(
             $validated['new_password']
         );
@@ -134,5 +146,26 @@ class ProfileController extends Controller
             'success' => true,
             'message' => 'Password changed successfully.',
         ]);
+    }
+
+    /**
+     * Format profile data for the frontend.
+     */
+    private function profileData($user)
+    {
+        return [
+            'user_id' => $user->user_id,
+            'username' => $user->username,
+            'full_name' => $user->full_name,
+            'email' => $user->email,
+            'role' => $user->role,
+            'employee_id' => $user->employee_id,
+            'is_active' => $user->is_active,
+            'last_login' => $user->last_login,
+            'avatar_path' => $user->avatar_path,
+            'avatar_url' => $user->avatar_path
+                ? url(Storage::url($user->avatar_path))
+                : null,
+        ];
     }
 }

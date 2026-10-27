@@ -13,6 +13,7 @@ use Illuminate\Validation\ValidationException;
 use App\Models\Shift;
 use App\Models\Customer;
 use App\Models\LoyaltyTransaction;
+use App\Models\FuelTank;
 
 class FuelSaleController extends Controller
 {
@@ -197,7 +198,8 @@ class FuelSaleController extends Controller
         ]);
     }
 
-    public function store(Request $request)
+    
+public function store(Request $request)
 {
     $validated = $request->validate([
         'items' => ['required', 'array', 'min:1'],
@@ -230,100 +232,166 @@ class FuelSaleController extends Controller
 
     $user = $request->user();
 
-if (!$user || !$user->user_id) {
-    return response()->json([
-        'message' => 'Authentication required.',
-    ], 401);
-}
+    if (!$user || !$user->user_id) {
+        return response()->json([
+            'message' => 'Authentication required.',
+        ], 401);
+    }
 
-$user = $request->user();
+    // Only Cashier and Fuel Attendant can sell fuel.
+    $role = strtolower(trim((string) $user->role));
 
-if (!$user || !$user->user_id) {
-    return response()->json([
-        'message' => 'Authentication required.',
-    ], 401);
-}
+    $allowedRoles = [
+        'cashier',
+        'fuel attendant',
+        'fuel_attendant',
+        'fuel-attendant',
+    ];
 
-// Allow Cashier and Fuel Attendant to sell fuel.
-$role = strtolower(trim((string) $user->role));
-
-$allowedRoles = [
-    'cashier',
-    'fuel attendant',
-    'fuel_attendant',
-    'fuel-attendant',
-];
-
-if (!in_array($role, $allowedRoles, true)) {
-    return response()->json([
-        'message' => 'Only Cashier or Fuel Attendant can sell fuel.',
-    ], 403);
-}
+    if (!in_array($role, $allowedRoles, true)) {
+        return response()->json([
+            'message' =>
+                'Only Cashier or Fuel Attendant can sell fuel.',
+        ], 403);
+    }
 
     $sales = DB::transaction(function () use ($validated, $user) {
 
-    // Find the active shift of the logged-in Cashier.
-    $shift = Shift::where('user_id', $user->user_id)
-        ->where('status', 'active')
-        ->latest('shift_id')
-        ->lockForUpdate()
-        ->first();
+        // Find and lock the active shift.
+        $shift = Shift::where('user_id', $user->user_id)
+            ->where('status', 'active')
+            ->latest('shift_id')
+            ->lockForUpdate()
+            ->first();
 
-    if (!$shift) {
-        throw ValidationException::withMessages([
-            'shift' => [
-                'Please start the shift before selling fuel.',
-            ],
-        ]);
-    }
+        if (!$shift) {
+            throw ValidationException::withMessages([
+                'shift' => [
+                    'Please start the shift before selling fuel.',
+                ],
+            ]);
+        }
 
-    $createdSales = [];
-    $totalSpentForPoints = 0;
+        $createdSales = [];
+        $totalSpentForPoints = 0;
 
         foreach ($validated['items'] as $item) {
-            $fuel = FuelType::where(
-                'fuel_id',
-                $item['fuel_id']
-            )->lockForUpdate()->firstOrFail();
 
+            // Lock the pump first.
             $pump = FuelPump::where(
                 'pump_id',
                 $item['pump_id']
-            )->lockForUpdate()->firstOrFail();
+            )
+                ->lockForUpdate()
+                ->firstOrFail();
 
-            if ((int) $pump->fuel_id !== (int) $fuel->fuel_id) {
+            if (!in_array(
+                $pump->status,
+                ['available', 'in_use'],
+                true
+            )) {
                 throw ValidationException::withMessages([
-                    'items' => ['The selected pump does not match the fuel type.'],
+                    'items' => [
+                        "Pump {$pump->pump_number} is not available for sales.",
+                    ],
                 ]);
             }
 
-            if (!in_array($pump->status, ['available', 'in_use'], true)) {
+            // A pump must be assigned to a tank.
+            if (empty($pump->tank_id)) {
                 throw ValidationException::withMessages([
-                    'items' => ['The selected pump is not available for sales.'],
+                    'items' => [
+                        "Pump {$pump->pump_number} has no assigned tank.",
+                    ],
+                ]);
+            }
+
+            // Lock the selected tank.
+            $tank = FuelTank::where(
+                'tank_id',
+                $pump->tank_id
+            )
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            // Lock the fuel type.
+            $fuel = FuelType::where(
+                'fuel_id',
+                $item['fuel_id']
+            )
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            // The selected fuel must match the pump.
+            if ((int) $pump->fuel_id !== (int) $fuel->fuel_id) {
+                throw ValidationException::withMessages([
+                    'items' => [
+                        'The selected pump does not match the fuel type.',
+                    ],
+                ]);
+            }
+
+            // The pump's assigned tank must contain that fuel type.
+            if ((int) $tank->fuel_id !== (int) $pump->fuel_id) {
+                throw ValidationException::withMessages([
+                    'items' => [
+                        "The fuel type in tank {$tank->tank_number} "
+                        . 'does not match the selected pump.',
+                    ],
+                ]);
+            }
+
+            // Only active tanks can supply fuel.
+            if ($tank->status !== 'active') {
+                throw ValidationException::withMessages([
+                    'items' => [
+                        "Tank {$tank->tank_number} is not active.",
+                    ],
                 ]);
             }
 
             if ($fuel->status !== 'available') {
                 throw ValidationException::withMessages([
-                    'items' => ['The selected fuel type is not available.'],
+                    'items' => [
+                        'The selected fuel type is not available.',
+                    ],
                 ]);
             }
 
             $quantity = round((float) $item['quantity'], 3);
-            $stock = (float) $fuel->available_quantity;
 
-            if ($quantity <= 0 || $quantity > $stock) {
+            $tankStock = (float) $tank->current_volume;
+            $fuelStock = (float) $fuel->available_quantity;
+
+            // Check the actual stock in the assigned tank.
+            if ($quantity <= 0 || $quantity > $tankStock) {
                 throw ValidationException::withMessages([
-                    'items' => ['Insufficient fuel stock.'],
+                    'items' => [
+                        "Insufficient stock in tank {$tank->tank_number}.",
+                    ],
+                ]);
+            }
+
+            // Also preserve the existing fuel-type stock check.
+            if ($quantity > $fuelStock) {
+                throw ValidationException::withMessages([
+                    'items' => [
+                        'Insufficient fuel-type stock.',
+                    ],
                 ]);
             }
 
             $unitPrice = (float) $fuel->selling_price;
             $subtotal = round($quantity * $unitPrice, 2);
 
+            // Create the sale inside the same transaction.
             $sale = FuelSale::create([
-                'sale_number' => 'FUEL-' . Str::upper(Str::random(16)),
-                'customer_id' => $validated['customer_id'] ?? null,
+                'sale_number' =>
+                    'FUEL-' . Str::upper(Str::random(16)),
+
+                'customer_id' =>
+                    $validated['customer_id'] ?? null,
+
                 'pump_id' => $pump->pump_id,
                 'fuel_id' => $fuel->fuel_id,
                 'quantity' => $quantity,
@@ -337,23 +405,29 @@ if (!in_array($role, $allowedRoles, true)) {
                 'sold_by' => $user->user_id,
                 'shift_id' => $shift->shift_id,
                 'sale_date' => now(),
-                'receipt_number' => 'RCT-' . Str::upper(Str::random(16)),
+
+                'receipt_number' =>
+                    'RCT-' . Str::upper(Str::random(16)),
             ]);
 
-            $fuel->available_quantity = round(
-                $stock - $quantity,
+            // Deduct the sold quantity from the assigned tank.
+            $tank->current_volume = round(
+                $tankStock - $quantity,
                 3
             );
+            $tank->save();
 
+            // Deduct the same quantity from the fuel-type stock.
+            $fuel->available_quantity = round(
+                $fuelStock - $quantity,
+                3
+            );
             $fuel->save();
 
-            
-$createdSales[] = $sale;
+            $createdSales[] = $sale;
 
-// Accumulate the total purchase amount in this checkout.
-$totalSpentForPoints += (float) $sale->total_amount;
-
-
+            // Accumulate checkout total for loyalty points.
+            $totalSpentForPoints += (float) $sale->total_amount;
         }
 
         // Award loyalty points once per checkout.
@@ -363,20 +437,18 @@ $totalSpentForPoints += (float) $sale->total_amount;
             $customer = Customer::where(
                 'customer_id',
                 $customerId
-            )->lockForUpdate()->firstOrFail();
+            )
+                ->lockForUpdate()
+                ->firstOrFail();
 
-            // $1 spent = 1 point.
-            // Ignore fractional dollars.
-            $pointsEarned = (int) floor(
-                $totalSpentForPoints
-            );
+            // $1 spent earns 1 point; ignore fractional dollars.
+            $pointsEarned = (int) floor($totalSpentForPoints);
 
             if ($pointsEarned > 0) {
-                $newBalance =
+                $customer->loyalty_points =
                     (int) $customer->loyalty_points
                     + $pointsEarned;
 
-                $customer->loyalty_points = $newBalance;
                 $customer->save();
 
                 LoyaltyTransaction::create([
@@ -384,8 +456,6 @@ $totalSpentForPoints += (float) $sale->total_amount;
                     'points_earned' => $pointsEarned,
                     'points_used' => 0,
                     'transaction_type' => 'earned',
-
-                    // Link to the first sale in this checkout.
                     'sale_id' => $createdSales[0]->sale_id,
                     'store_sale_id' => null,
                 ]);
@@ -393,7 +463,6 @@ $totalSpentForPoints += (float) $sale->total_amount;
         }
 
         return $createdSales;
-
     });
 
     return response()->json([
@@ -401,4 +470,5 @@ $totalSpentForPoints += (float) $sale->total_amount;
         'data' => $sales,
     ], 201);
 }
+
 }

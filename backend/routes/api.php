@@ -30,6 +30,7 @@ use App\Http\Controllers\CashierDashboardController;
 use App\Http\Controllers\LoyaltyController;
 use App\Http\Controllers\ShiftController;
 use App\Http\Controllers\SalaryPaymentController;
+use Illuminate\Support\Facades\Storage;
 
 
 
@@ -44,25 +45,16 @@ use App\Http\Controllers\SalaryPaymentController;
 Route::middleware('auth:sanctum')->group(function () {
 
     // Get the currently authenticated user's profile.
-    Route::get(
-        '/profile',
-        [ProfileController::class, 'show']
-    );
+    Route::get('/profile', [ProfileController::class, 'show']);
 
-    // Update the current user's profile.
-    Route::put(
-        '/profile',
-        [ProfileController::class, 'update']
-    );
+    // Update profile information.
+    Route::put('/profile', [ProfileController::class, 'update']);
+
+    // Upload profile photo and update profile.
+    Route::post('/profile', [ProfileController::class, 'update']);
 
     // Change the current user's password.
-    Route::post(
-        '/change-password',
-        [ProfileController::class, 'changePassword']
-    );
-
-
-
+    Route::post('/change-password', [ProfileController::class, 'changePassword']);
 
 });
 
@@ -256,21 +248,34 @@ Route::middleware('auth:sanctum')->group(function () {
 });
 
 
-// =====================================================
-// PROTECTED USER API
-// =====================================================
-// This API requires a valid Sanctum token.
-//
-// GET /api/user
 
-Route::get(
+ // =====================================================
+// PROTECTED USER API
+// GET /api/user
+// =====================================================
+
+Route::middleware('auth:sanctum')->get(
     '/user',
     function (Request $request) {
+        $user = $request->user();
 
-        return $request->user();
-
+        return response()->json([
+            'user_id' => $user->user_id,
+            'username' => $user->username,
+            'full_name' => $user->full_name,
+            'email' => $user->email,
+            'role' => $user->role,
+            'employee_id' => $user->employee_id,
+            'is_active' => $user->is_active,
+            'last_login' => $user->last_login,
+            'avatar_path' => $user->avatar_path,
+            'avatar_url' => $user->avatar_path
+                ? url(Storage::url($user->avatar_path))
+                : null,
+        ]);
     }
-)->middleware('auth:sanctum');
+);
+
 
 
 // =====================================================
@@ -593,7 +598,6 @@ Route::apiResource(
     'shift-handovers',
     ShiftHandoverController::class
 );
-
 
 
 });

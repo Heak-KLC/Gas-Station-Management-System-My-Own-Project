@@ -272,7 +272,7 @@ function Stat({ icon: Icon, tone, label, value, note }) {
         <Icon size={24} />
       </span>
       <div>
-        <p className="text-sm text-slate-600">{label}</p>
+        <p className="text-lg text-slate-600 font-bold">{label}</p>
         <p className="text-2xl font-bold text-slate-900">{value}</p>
         <p className="text-sm text-slate-500">{note}</p>
       </div>
@@ -531,7 +531,7 @@ export default function Notifications({ onNavigate = () => {} }) {
   };
 
   return (
-    <div className="space-y-4 bg-gray-100 p-4 md:p-6">
+    <div className="space-y-4 bg-slate-300 -m-6 p-4 md:p-6">
       <div className="flex flex-col justify-between gap-4 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100 sm:flex-row sm:items-center">
         <div className="flex items-center gap-4">
           <span className="flex h-14 w-14 items-center justify-center rounded-xl bg-[#b8860b] text-white">

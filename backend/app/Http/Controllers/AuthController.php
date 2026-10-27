@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Models\AuditLog;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 
 class AuthController extends Controller
 {
@@ -112,16 +113,20 @@ AuditLog::create([
         // Return login information to React.
         // --------------------------------------------------
         return response()->json([
-            'message' => 'Login successful.',
-            'token' => $token,
-            'user' => [
-                'user_id' => $user->user_id,
-                'username' => $user->username,
-                'full_name' => $user->full_name,
-                'email' => $user->email,
-                'role' => $user->role,
-            ],
-        ], 200);
+    'message' => 'Login successful.',
+    'token' => $token,
+    'user' => [
+        'user_id' => $user->user_id,
+        'username' => $user->username,
+        'full_name' => $user->full_name,
+        'email' => $user->email,
+        'role' => $user->role,
+        'avatar_path' => $user->avatar_path,
+        'avatar_url' => $user->avatar_path
+            ? url(Storage::url($user->avatar_path))
+            : null,
+    ],
+], 200);
     }
 
 

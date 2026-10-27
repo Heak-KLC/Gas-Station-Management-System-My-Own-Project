@@ -555,7 +555,7 @@ useEffect(() => {
         <Icon size={22} />
       </span>
       <div>
-        <p className="text-sm text-slate-700">{label}</p>
+        <p className="text-lg font-black text-slate-600">{label}</p>
         <p className="text-2xl font-bold text-slate-900">{value}</p>
         <p className={`text-sm ${noteCls}`}>{note}</p>
       </div>
@@ -563,7 +563,7 @@ useEffect(() => {
   );
 
   return (
-    <div className="space-y-4 bg-gray-400 p-6">
+    <div className="space-y-4 bg-slate-300 -m-6 p-6">
       <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
         <div className="flex items-center gap-4">
           <span className="flex h-14 w-14 items-center justify-center rounded-xl bg-[#b8860b] text-white">

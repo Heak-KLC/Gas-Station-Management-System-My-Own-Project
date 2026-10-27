@@ -245,13 +245,18 @@ export default function Settings() {
   const [taxSettings, setTaxSettings] = useState(DEFAULT_TAX);
   const [fuelPrices, setFuelPrices] = useState(DEFAULT_PRICES);
 
-  const [profile, setProfile] = useState({
-    full_name: "",
-    username: "",
-    email: "",
-    phone: "",
-    avatar: "",
-  });
+  
+const [profile, setProfile] = useState({
+  full_name: "",
+  username: "",
+  email: "",
+  avatar_path: "",
+  avatar_url: "",
+});
+
+const [avatarFile, setAvatarFile] = useState(null);
+const [avatarPreview, setAvatarPreview] = useState("");
+
 
   const [passwordForm, setPasswordForm] = useState({
     current_password: "",
@@ -318,33 +323,7 @@ export default function Settings() {
       });
 
       
-  // ប្រើ Profile API ដើម្បីទទួលបានព័ត៌មានថ្មីពី Database។
-  try {
-    const response = await api.get("/profile");
-    const user = response.data?.data ?? response.data;
 
-    setProfile({
-      full_name: user.full_name || "",
-      username: user.username || "",
-      email: user.email || "",
-      phone: "",
-      avatar: "",
-    });
-  } catch (error) {
-    // ប្រសិនបើ API បរាជ័យ ប្រើព័ត៌មានពី Login ជាជម្រើសបម្រុង។
-    setProfile({
-      full_name: currentUser.full_name || "",
-      username: currentUser.username || "",
-      email: currentUser.email || "",
-      phone: "",
-      avatar: "",
-    });
-
-    showNotice(
-      "error",
-      `មិនអាចផ្ទុក Profile ពី Database បានទេ៖ ${errorMessage(error)}`
-    );
-  }
 
 
       // Roles/permissions មិនត្រូវយកទិន្នន័យ local មកអះអាងថាជា Database ទេ។
@@ -354,9 +333,33 @@ export default function Settings() {
     } else {
       showNotice(
         "error",
-        `មិនអាចផ្ទុក System Settings បានទេ៖ ${errorMessage(settingsResult.reason)}`
+        `Unable to load System Settings: ${errorMessage(settingsResult.reason)}`
       );
     }
+
+
+
+try {
+  const response = await api.get("/profile");
+  const user = response.data?.data ?? response.data;
+
+  setProfile({
+    full_name: user.full_name || "",
+    username: user.username || "",
+    email: user.email || "",
+    avatar_path: user.avatar_path || "",
+    avatar_url: user.avatar_url || "",
+  });
+
+  setAvatarFile(null);
+  setAvatarPreview("");
+} catch (error) {
+  showNotice(
+    "error",
+    `Unable to load profile from the database: ${errorMessage(error)}`
+  );
+}
+
 
     if (fuelResult.status === "fulfilled") {
       const rows = Array.isArray(fuelResult.value)
@@ -507,30 +510,123 @@ export default function Settings() {
     reader.readAsDataURL(file);
   }
 
-  // Logo នៅទីនេះគ្រាន់តែ Preview; ត្រូវការ API Upload បើចង់រក្សាទុកជាអចិន្ត្រៃយ៍
-  async function handleSaveProfile(event) {
-    event.preventDefault();
-    setSaving(true);
 
-    try {
-      await api.put("/profile", {
-        full_name: profile.full_name,
-        username: profile.username,
-        email: profile.email,
-        phone: profile.phone,
-      });
 
-      showNotice("success", "បានធ្វើបច្ចុប្បន្នភាព Profile។");
-      setShowProfileModal(false);
-    } catch (error) {
-      showNotice(
-        "error",
-        `ធ្វើបច្ចុប្បន្នភាព Profile មិនបានទេ៖ ${errorMessage(error)}`
-      );
-    } finally {
-      setSaving(false);
-    }
+function handleAvatarChange(event) {
+  const file = event.target.files?.[0];
+
+  if (!file) return;
+
+  const allowedTypes = [
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+  ];
+
+  if (!allowedTypes.includes(file.type)) {
+    showNotice(
+      "error",
+      "Please select only JPG, PNG, or WEBP images."
+    );
+    event.target.value = "";
+    return;
   }
+
+  if (file.size > 2 * 1024 * 1024) {
+    showNotice("error", "The image must not exceed 2 MB in size.");
+    event.target.value = "";
+    return;
+  }
+
+  setAvatarFile(file);
+  setAvatarPreview(URL.createObjectURL(file));
+}
+
+
+ 
+async function handleSaveProfile(event) {
+  event.preventDefault();
+
+  setSaving(true);
+  setNotice(null);
+
+  try {
+    const formData = new FormData();
+
+    formData.append("full_name", profile.full_name.trim());
+    formData.append("username", profile.username.trim());
+    formData.append("email", profile.email.trim());
+
+    if (avatarFile) {
+      formData.append("avatar", avatarFile);
+    }
+
+    const response = await api.post("/profile", formData, {
+      headers: {
+        "Content-Type": "multipart/form-data",
+      },
+      params: {},
+    });
+
+    const user = response.data?.data ?? response.data;
+
+    setProfile((previous) => ({
+      ...previous,
+      full_name: user.full_name || "",
+      username: user.username || "",
+      email: user.email || "",
+      avatar_path: user.avatar_path || "",
+      avatar_url: user.avatar_url || "",
+    }));
+
+    window.dispatchEvent(
+  new CustomEvent("profile-updated", {
+    detail: {
+      avatar_url: user.avatar_url || "",
+      avatar_path: user.avatar_path || "",
+      full_name: user.full_name || "",
+      username: user.username || "",
+      email: user.email || "",
+    },
+  })
+);
+
+    setAvatarFile(null);
+    setAvatarPreview("");
+
+    // Update the cached user information if it exists.
+    try {
+      const cachedUser = JSON.parse(
+        sessionStorage.getItem("gas_station_user") || "{}"
+      );
+
+      sessionStorage.setItem(
+        "gas_station_user",
+        JSON.stringify({
+          ...cachedUser,
+          full_name: user.full_name || "",
+          username: user.username || "",
+          email: user.email || "",
+          avatar_url: user.avatar_url || "",
+          avatar_path: user.avatar_path || "",
+        })
+      );
+    } catch {
+      // The profile remains saved on the server.
+    }
+
+    showNotice("success", "Profile updated successfully.");
+    setShowProfileModal(false);
+  } catch (error) {
+    showNotice(
+      "error",
+      `Unable to update profile: ${errorMessage(error)}`
+    );
+  } finally {
+    setSaving(false);
+  }
+}
+
 
   
   // ប្ដូរពាក្យសម្ងាត់ និងផ្ញើ Field ឱ្យត្រូវនឹង ProfileController។
@@ -932,9 +1028,19 @@ export default function Settings() {
                 >
                   <div className="flex flex-wrap items-center justify-between gap-4">
                     <div className="flex items-center gap-3">
-                      <div className="flex h-14 w-14 items-center justify-center rounded-full bg-blue-100 text-blue-800">
-                        <UserRound size={27} />
-                      </div>
+                      
+<div className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-full bg-blue-100 text-blue-800">
+  {profile.avatar_url ? (
+    <img
+      src={profile.avatar_url}
+      alt="User profile"
+      className="h-full w-full object-cover"
+    />
+  ) : (
+    <UserRound size={27} />
+  )}
+</div>
+
                       <div>
                         <p className="font-semibold text-slate-800">
                           {profile.full_name || currentUser.full_name || "Current User"}
@@ -1362,6 +1468,38 @@ export default function Settings() {
               </div>
 
               <form onSubmit={handleSaveProfile} className="space-y-4">
+
+<div className="flex flex-col items-center gap-3 pb-3">
+  <div className="h-24 w-24 overflow-hidden rounded-full border border-slate-200 bg-slate-100">
+    {(avatarPreview || profile.avatar_url) ? (
+      <img
+        src={avatarPreview || profile.avatar_url}
+        alt="Profile preview"
+        className="h-full w-full object-cover"
+      />
+    ) : (
+      <div className="flex h-full w-full items-center justify-center text-blue-700">
+        <UserRound size={40} />
+      </div>
+    )}
+  </div>
+
+  <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+    <ImagePlus size={17} />
+    Choose Profile Photo
+    <input
+      type="file"
+      accept="image/jpeg,image/png,image/webp"
+      className="hidden"
+      onChange={handleAvatarChange}
+    />
+  </label>
+
+  <p className="text-xs text-slate-500">
+    JPG, PNG or WEBP. Maximum 2 MB.
+  </p>
+</div>
+
                 <Field
                   label="Full Name"
                   value={profile.full_name}

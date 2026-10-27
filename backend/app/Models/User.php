@@ -35,6 +35,7 @@ class User extends Authenticatable
         'employee_id',
         'is_active',
         'last_login',
+        'avatar_path',
     ];
 
     // Hide sensitive information from JSON responses.

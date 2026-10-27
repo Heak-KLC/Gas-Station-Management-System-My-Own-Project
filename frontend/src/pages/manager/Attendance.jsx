@@ -573,7 +573,7 @@ const handleRefresh = async () => {
   );
 
   return (
-    <div className="bg-gray-400 p-6">
+    <div className="bg-slate-300 -m-6 p-6">
       
 <PageHeader
   title="Employee Attendance"

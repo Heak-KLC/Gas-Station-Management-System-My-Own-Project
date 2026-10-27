@@ -310,6 +310,8 @@ export default function App() {
   // --------------------------------------------------
   const [checkingSession, setCheckingSession] = useState(true);
 
+  const [language, setLanguage] = useState("en");
+
 
   // ==================================================
   // RESTORE SESSION AFTER REFRESH
@@ -368,37 +370,22 @@ export default function App() {
       .then((response) => {
 
         // Laravel returns the authenticated user.
-        const userData = response.data;
+        const userData = normalizeUser(response.data);
 
+// Restore the authenticated user's profile.
+setUser(userData);
 
-        // ------------------------------------------------
-        // Normalize Laravel role to React role.
-        //
-        // Laravel database:
-        // "fuel_attendant"
-        //
-        // React ROLES:
-        // "attendant"
-        // ------------------------------------------------
-        const normalizedRole =
-          userData.role === "fuel_attendant"
-            ? "attendant"
-            : userData.role;
+// Keep the cached user synchronized with Laravel.
+sessionStorage.setItem(
+  "gas_station_user",
+  JSON.stringify({
+    ...userData,
+    avatar_path: userData.avatar_path || "",
+    avatar_url: userData.avatar_url || "",
+  })
+);
 
-
-        // ------------------------------------------------
-        // Restore the authenticated user into React state.
-        // ------------------------------------------------
-        setUser({
-          ...userData,
-          role: normalizedRole,
-        });
-
-
-        // ------------------------------------------------
-        // After refresh, start from Dashboard.
-        // ------------------------------------------------
-        setActive("dashboard");
+setActive("dashboard");
       })
 
       .catch((error) => {
@@ -454,59 +441,36 @@ export default function App() {
   // Login.jsx sends the user information returned
   // by Laravel after successful authentication.
   // ==================================================
-  const handleLogin = (userData) => {
+  
+const handleLogin = (userData) => {
+  if (!userData) {
+    alert("User information was not received.");
+    return false;
+  }
 
-    // ------------------------------------------------
-    // Make sure Laravel returned user information.
-    // ------------------------------------------------
-    if (!userData) {
+  const loggedInUser = normalizeUser(userData);
 
-      alert(
-        "User information was not received."
-      );
+  if (!ROLES[loggedInUser.role]) {
+    alert(`Unsupported user role: ${loggedInUser.role}`);
+    return false;
+  }
 
-      return false;
-    }
+  // Save the current logged-in user's profile.
+  sessionStorage.setItem(
+    "gas_station_user",
+    JSON.stringify({
+      ...loggedInUser,
+      avatar_path: loggedInUser.avatar_path || "",
+      avatar_url: loggedInUser.avatar_url || "",
+    })
+  );
 
+  setUser(loggedInUser);
+  setActive("dashboard");
 
-    // ------------------------------------------------
-    // Normalize the backend role.
-    //
-    // Laravel:
-    // fuel_attendant
-    //
-    // React:
-    // attendant
-    // ------------------------------------------------
-    const normalizedRole =
-      userData.role === "fuel_attendant"
-        ? "attendant"
-        : userData.role;
+  return true;
+};
 
-
-    // ------------------------------------------------
-    // Create the user object used by React.
-    // ------------------------------------------------
-    const loggedInUser = {
-      ...userData,
-      role: normalizedRole,
-    };
-
-
-    // ------------------------------------------------
-    // Store the authenticated user in React state.
-    // ------------------------------------------------
-    setUser(loggedInUser);
-
-
-    // ------------------------------------------------
-    // Always start at Dashboard after login.
-    // ------------------------------------------------
-    setActive("dashboard");
-
-
-    return true;
-  };
 
 
   // ==================================================
@@ -582,21 +546,11 @@ export default function App() {
       // IMPORTANT:
       // Use sessionStorage, NOT localStorage.
       // ------------------------------------------------
-      sessionStorage.removeItem(
-        "gas_station_token"
-      );
+      sessionStorage.removeItem("gas_station_token");
+sessionStorage.removeItem("gas_station_user");
 
-
-      // ------------------------------------------------
-      // Clear the logged-in user from React state.
-      // ------------------------------------------------
-      setUser(null);
-
-
-      // ------------------------------------------------
-      // Reset the active page.
-      // ------------------------------------------------
-      setActive("dashboard");
+setUser(null);
+setActive("dashboard");
     }
   };
 
@@ -693,7 +647,18 @@ export default function App() {
         {/* ------------------------------------------------
             Top navigation/header
            ------------------------------------------------ */}
-        <TopBar title={title} />
+        
+
+<TopBar
+  title={title}
+  user={user || {}}
+  pages={pages}
+  onNavigate={setActive}
+  onLogout={handleLogout}
+  language={language}
+  onLanguageChange={setLanguage}
+/>
+
 
 
         {/* ------------------------------------------------
@@ -731,3 +696,11 @@ export default function App() {
     </div>
   );
 }
+
+const normalizeUser = (userData) => ({
+  ...userData,
+  role:
+    String(userData.role || "").toLowerCase() === "fuel_attendant"
+      ? "attendant"
+      : String(userData.role || "").toLowerCase(),
+});
