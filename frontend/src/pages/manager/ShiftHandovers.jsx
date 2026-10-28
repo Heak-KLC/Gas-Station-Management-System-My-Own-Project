@@ -3,7 +3,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Table, Btn, S, PageHeader, Input, Select } from '../../components/kit';
 import { Eye, Pencil, Trash2, RefreshCw } from 'lucide-react';
 
-const API_URL = 'http://127.0.0.1:8000/api';
+const API_URL = 'https://gas-station-backend-ps9c.onrender.com/api';
 
 const SHIFT_TYPES = ['Morning', 'Afternoon', 'Night'];
 const STATUSES = ['Pending', 'Approved', 'Flagged'];

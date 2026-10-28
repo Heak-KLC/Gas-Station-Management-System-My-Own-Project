@@ -2,7 +2,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Card, Table, S, Input, Select, Pager } from '../../components/kit';
 
-const API_URL = 'http://127.0.0.1:8000/api';
+const API_URL = 'https://gas-station-backend-ps9c.onrender.com/api';
 
 const TIER_OPTIONS = ['All', 'None', 'Bronze', 'Silver', 'Gold', 'Platinum'];
 

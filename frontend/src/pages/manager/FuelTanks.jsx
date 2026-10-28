@@ -9,7 +9,7 @@ import {
   LoaderCircle,
 } from "lucide-react";
 
-const API_URL = "http://127.0.0.1:8000/api";
+const API_URL = "https://gas-station-backend-ps9c.onrender.com/api";
 
 const PUMP_STATUS = {
   "Available Now": "bg-emerald-500",

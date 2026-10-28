@@ -6,7 +6,7 @@ import axios from "axios";
 // All API requests from React will use this base URL.
 // Laravel backend is currently running on port 8000.
 const api = axios.create({
-  baseURL: "http://127.0.0.1:8000/api",
+  baseURL: "https://gas-station-backend-ps9c.onrender.com/api",
 
   // ------------------------------------------------
   // IMPORTANT:
