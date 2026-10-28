@@ -17,6 +17,9 @@ import {
   updateEquipmentMaintenance,
   deleteEquipmentMaintenance, // បន្ថែម API សម្រាប់លុប
 } from "../api/equipmentMaintenanceApi";
+import { getEmployees } from "../api/employeeApi";
+
+
 
 
 const PAGE_SIZE = 10;
@@ -90,19 +93,39 @@ const getEquipmentName = (record) => {
 };
 
 // Extract employee information returned by the Laravel relationship.
+
 const getTechnician = (record) => {
-  if (!record.performedBy) {
-    return record.performed_by
-      ? `Employee #${record.performed_by}`
-      : "Unassigned";
+  const employee =
+    record?.performedBy ||
+    record?.technician ||
+    (typeof record?.performed_by === "object"
+      ? record.performed_by
+      : null);
+
+  if (employee) {
+    return (
+      employee.full_name ||
+      employee.name ||
+      employee.employee_name ||
+      [
+        employee.first_name,
+        employee.last_name,
+      ]
+        .filter(Boolean)
+        .join(" ") ||
+      `Employee #${employee.employee_id ?? employee.id ?? "Unknown"}`
+    );
   }
 
-  return (
-    record.performedBy.full_name ||
-    record.performedBy.name ||
-    `Employee #${record.performed_by}`
-  );
+  const employeeId = record?.performed_by;
+
+  return employeeId !== null &&
+    employeeId !== undefined &&
+    employeeId !== ""
+    ? `Employee #${employeeId}`
+    : "Unassigned";
 };
+
 
 // Display cost consistently.
 const formatCost = (value) => {
@@ -126,6 +149,9 @@ const emptyMaintenanceForm = {
 export default function EquipmentMaintenance() {
   // Store actual maintenance records returned by Laravel.
   const [logs, setLogs] = useState([]);
+
+  const [employees, setEmployees] = useState([]);
+const [loadingEmployees, setLoadingEmployees] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
@@ -154,6 +180,26 @@ export default function EquipmentMaintenance() {
   const [saving, setSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
+
+  useEffect(() => {
+  const loadEmployees = async () => {
+    try {
+      setLoadingEmployees(true);
+
+      const response = await getEmployees();
+
+      setEmployees(Array.isArray(response) ? response : []);
+    } catch (error) {
+      console.error("Failed to load employees:", error);
+      setEmployees([]);
+    } finally {
+      setLoadingEmployees(false);
+    }
+  };
+
+  loadEmployees();
+}, []);
+
 
   // --------------------------------------------------
   // Load maintenance records from the Laravel API.
@@ -701,9 +747,18 @@ useEffect(() => {
           equipment_id: String(record.equipment_id),
           scheduled_date: toInputDate(record.scheduled_date),
           performed_date: toInputDate(record.performed_date),
-          performed_by: record.performed_by
-            ? String(record.performed_by)
-            : "",
+          performed_by: (() => {
+  const value = record.performed_by;
+
+  const employeeId =
+    value && typeof value === "object"
+      ? value.employee_id ?? value.id
+      : value;
+
+  return employeeId == null || employeeId === ""
+    ? ""
+    : String(employeeId);
+})(),
           cost:
             record.cost == null
               ? ""
@@ -959,24 +1014,54 @@ useEffect(() => {
                 </div>
 
                 <div>
-                  <label className="block text-slate-600 mb-1 font-medium">
-                    Employee ID
-                  </label>
+  <label className="block text-slate-600 mb-1 font-medium">
+    Technician / Assigned
+  </label>
 
-                  <input
-                    type="number"
-                    min="1"
-                    placeholder="Optional"
-                    value={newLog.performed_by}
-                    onChange={(e) =>
-                      setNewLog({
-                        ...newLog,
-                        performed_by: e.target.value,
-                      })
-                    }
-                    className="w-full border rounded-xl p-2.5 bg-slate-50 text-slate-800 outline-none focus:border-cyan-500"
-                  />
-                </div>
+  <select
+    value={newLog.performed_by}
+    onChange={(e) =>
+      setNewLog({
+        ...newLog,
+        performed_by: e.target.value,
+      })
+    }
+    disabled={loadingEmployees}
+    className="w-full border rounded-xl p-2.5 bg-slate-50 text-slate-800 outline-none focus:border-cyan-500"
+  >
+    <option value="">
+      {loadingEmployees
+        ? "Loading employees..."
+        : "-- Unassigned --"}
+    </option>
+
+    {employees.map((employee) => {
+      const employeeId =
+        employee.employee_id ?? employee.id;
+
+      const employeeName =
+        employee.full_name ||
+        employee.name ||
+        employee.employee_name ||
+        [
+          employee.first_name,
+          employee.last_name,
+        ]
+          .filter(Boolean)
+          .join(" ") ||
+        `Employee #${employeeId}`;
+
+      return (
+        <option
+          key={employeeId}
+          value={employeeId}
+        >
+          {employeeName} (ID: {employeeId})
+        </option>
+      );
+    })}
+  </select>
+</div>
               </div>
 
               <div>
@@ -1348,23 +1433,65 @@ useEffect(() => {
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block text-slate-600 mb-1 font-medium">
-                    Employee ID
-                  </label>
+  <label className="block text-slate-600 mb-1 font-medium">
+    Technician / Assigned
+  </label>
 
-                  <input
-                    type="number"
-                    min="1"
-                    value={selectedLog.performed_by || ""}
-                    onChange={(e) =>
-                      setSelectedLog({
-                        ...selectedLog,
-                        performed_by: e.target.value,
-                      })
-                    }
-                    className="w-full border rounded-xl p-2.5 bg-slate-50 text-slate-800 outline-none focus:border-cyan-500"
-                  />
-                </div>
+  <select
+    value={(() => {
+      const value = selectedLog.performed_by;
+
+      const employeeId =
+        value && typeof value === "object"
+          ? value.employee_id ?? value.id
+          : value;
+
+      return employeeId == null
+        ? ""
+        : String(employeeId);
+    })()}
+    onChange={(e) =>
+      setSelectedLog({
+        ...selectedLog,
+        performed_by: e.target.value,
+      })
+    }
+    disabled={loadingEmployees}
+    className="w-full border rounded-xl p-2.5 bg-slate-50 text-slate-800 outline-none focus:border-cyan-500"
+  >
+    <option value="">
+      {loadingEmployees
+        ? "Loading employees..."
+        : "-- Unassigned --"}
+    </option>
+
+    {employees.map((employee) => {
+      const employeeId =
+        employee.employee_id ?? employee.id;
+
+      const employeeName =
+        employee.full_name ||
+        employee.name ||
+        employee.employee_name ||
+        [
+          employee.first_name,
+          employee.last_name,
+        ]
+          .filter(Boolean)
+          .join(" ") ||
+        `Employee #${employeeId}`;
+
+      return (
+        <option
+          key={employeeId}
+          value={employeeId}
+        >
+          {employeeName} (ID: {employeeId})
+        </option>
+      );
+    })}
+  </select>
+</div>
 
                 <div>
                   <label className="block text-slate-600 mb-1 font-medium">
@@ -1573,9 +1700,18 @@ useEffect(() => {
               equipment_id: String(selectedLog.equipment_id),
               scheduled_date: toInputDate(selectedLog.scheduled_date),
               performed_date: toInputDate(selectedLog.performed_date),
-              performed_by: selectedLog.performed_by
-                ? String(selectedLog.performed_by)
-                : "",
+              performed_by: (() => {
+  const value = selectedLog.performed_by;
+
+  const employeeId =
+    value && typeof value === "object"
+      ? value.employee_id ?? value.id
+      : value;
+
+  return employeeId != null && employeeId !== ""
+    ? String(employeeId)
+    : "";
+})(),
               cost:
                 selectedLog.cost == null
                   ? ""
