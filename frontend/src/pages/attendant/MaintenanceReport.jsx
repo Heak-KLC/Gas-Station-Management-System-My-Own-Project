@@ -11,7 +11,7 @@ import {
   Trash2,
 } from "lucide-react";
 
-const API_URL = "https://gas-station-backend-ps9c.onrender.com/api";
+const API_URL = "https://gas-station-backend-ps9c.onrender.com";
 const PAGE_SIZE = 5;
 
 const EQUIPMENT_TYPES = [

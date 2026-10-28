@@ -6,7 +6,7 @@ import {
   Building2, QrCode
 } from "lucide-react";
 
-const API_URL = "https://gas-station-backend-ps9c.onrender.com/api";
+const API_URL = "https://gas-station-backend-ps9c.onrender.com";
 
 const PAYMENT_OPTIONS = [
   { label: "Cash", value: "cash", icon: Wallet },

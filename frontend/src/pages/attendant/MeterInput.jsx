@@ -8,7 +8,7 @@ import {
   X,
 } from "lucide-react";
 
-const API_URL = "https://gas-station-backend-ps9c.onrender.com/api";
+const API_URL = "https://gas-station-backend-ps9c.onrender.com";
 
 const getToken = () =>
   sessionStorage.getItem("gas_station_token");

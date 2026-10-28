@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Fuel, Search, X, RefreshCw, LoaderCircle } from "lucide-react";
 
-const API_URL = "https://gas-station-backend-ps9c.onrender.com/api";
+const API_URL = "https://gas-station-backend-ps9c.onrender.com";
 
 const STATUS = {
   "Available Now": {

@@ -9,7 +9,7 @@ import { Card, Input } from '../../components/kit';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
-const API_URL = 'https://gas-station-backend-ps9c.onrender.com/api';
+const API_URL = 'https://gas-station-backend-ps9c.onrender.com';
 
 const DENOMINATIONS = [100, 50, 20, 10, 5, 1];
 

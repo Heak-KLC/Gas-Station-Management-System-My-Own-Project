@@ -6,7 +6,7 @@ import {
   MoreHorizontal, Filter, RotateCcw, Wrench, RefreshCw, LoaderCircle
 } from "lucide-react";
 
-const API_URL = "https://gas-station-backend-ps9c.onrender.com/api";
+const API_URL = "https://gas-station-backend-ps9c.onrender.com";
 
 const TYPES = ["Pump", "Tank", "Dispenser", "Security System", "Generator", "Other"];
 const M_TYPES = ["Routine", "Inspection", "Repair", "Emergency"];

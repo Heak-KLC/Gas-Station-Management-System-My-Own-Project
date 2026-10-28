@@ -12,7 +12,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 
-const API_URL = "https://gas-station-backend-ps9c.onrender.com/api";
+const API_URL = "https://gas-station-backend-ps9c.onrender.com";
 
 const REASONS = [
   "Wrong Fuel",

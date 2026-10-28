@@ -13,7 +13,7 @@ import {
   Pager,
 } from '../../components/kit';
 
-const API_URL = 'https://gas-station-backend-ps9c.onrender.com/api';
+const API_URL = 'https://gas-station-backend-ps9c.onrender.com';
 const TOKEN_KEY = 'gas_station_token';
 
 const STATUS_OPTIONS = [

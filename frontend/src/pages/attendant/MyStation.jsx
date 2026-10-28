@@ -14,7 +14,7 @@ import {
   LoaderCircle,
 } from "lucide-react";
 
-const API_URL = "https://gas-station-backend-ps9c.onrender.com/api";
+const API_URL = "https://gas-station-backend-ps9c.onrender.com";
 
 const getAuthHeaders = () => {
   const token = sessionStorage.getItem("gas_station_token");

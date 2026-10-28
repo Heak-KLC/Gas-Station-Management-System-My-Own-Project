@@ -389,7 +389,7 @@ const [refillsPage, setRefillsPage] = useState(1);
   async function loadFuelPrices() {
     try {
       const response = await fetch(
-        "https://gas-station-backend-ps9c.onrender.com/api/fuel-types",
+        "https://gas-station-backend-ps9c.onrender.com/fuel-types",
         {
           headers: {
             Accept: "application/json",
@@ -585,7 +585,7 @@ useEffect(() => {
           }
 
           const response = await fetch(
-            `https://gas-station-backend-ps9c.onrender.com/api/fuel-types/${p.fuelId}`,
+            `https://gas-station-backend-ps9c.onrender.com/fuel-types/${p.fuelId}`,
             {
               method: "PUT",
               headers: {
