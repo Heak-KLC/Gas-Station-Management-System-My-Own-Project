@@ -18,6 +18,9 @@ import {
   deleteEquipmentMaintenance, // បន្ថែម API សម្រាប់លុប
 } from "../api/equipmentMaintenanceApi";
 
+
+const PAGE_SIZE = 10;
+
 // --------------------------------------------------
 // Equipment Maintenance Management
 // This component uses records from the Laravel API.
@@ -125,6 +128,7 @@ export default function EquipmentMaintenance() {
   const [logs, setLogs] = useState([]);
 
   const [searchQuery, setSearchQuery] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
 
   // Modal control: add, schedule, settings, or edit.
   const [modalType, setModalType] = useState(null);
@@ -411,6 +415,39 @@ export default function EquipmentMaintenance() {
     );
   });
 
+  // Pagination
+const totalPages = Math.max(
+  1,
+  Math.ceil(filteredLogs.length / PAGE_SIZE)
+);
+
+const startIndex = (currentPage - 1) * PAGE_SIZE;
+
+const paginatedLogs = filteredLogs.slice(
+  startIndex,
+  startIndex + PAGE_SIZE
+);
+
+const firstRecord =
+  filteredLogs.length === 0 ? 0 : startIndex + 1;
+
+const lastRecord = Math.min(
+  startIndex + PAGE_SIZE,
+  filteredLogs.length
+);
+
+// Reset page when search changes
+useEffect(() => {
+  setCurrentPage(1);
+}, [searchQuery]);
+
+// Keep page number valid when records are deleted
+useEffect(() => {
+  if (currentPage > totalPages) {
+    setCurrentPage(totalPages);
+  }
+}, [currentPage, totalPages]);
+
   // Calculate dashboard statistics from actual database records.
   const completedCount = logs.filter(
     (record) => record.status === "completed"
@@ -582,7 +619,7 @@ export default function EquipmentMaintenance() {
                   </td>
                 </tr>
               ) : (
-                filteredLogs.map((record) => (
+                paginatedLogs.map((record) => (
                   <tr
                     key={record.maintenance_id}
                     className="hover:bg-slate-50/60 transition text-sm"
@@ -713,6 +750,81 @@ export default function EquipmentMaintenance() {
             </tbody>
           </table>
         </div>
+
+
+
+
+{/* Pagination */}
+{!loading && filteredLogs.length > 0 && (
+  <div className="flex flex-col gap-3 border-t border-slate-200 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+    <p className="text-sm text-slate-500">
+      Showing{" "}
+      <span className="font-semibold text-slate-800">
+        {firstRecord}
+      </span>
+      {" "}to{" "}
+      <span className="font-semibold text-slate-800">
+        {lastRecord}
+      </span>
+      {" "}of{" "}
+      <span className="font-semibold text-slate-800">
+        {filteredLogs.length}
+      </span>
+      {" "}records
+    </p>
+
+    <div className="flex flex-wrap items-center gap-1">
+      <button
+        type="button"
+        onClick={() =>
+          setCurrentPage((page) => Math.max(1, page - 1))
+        }
+        disabled={currentPage === 1}
+        className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        Previous
+      </button>
+
+      {Array.from(
+        { length: totalPages },
+        (_, index) => index + 1
+      ).map((page) => (
+        <button
+          key={page}
+          type="button"
+          onClick={() => setCurrentPage(page)}
+          aria-current={currentPage === page ? "page" : undefined}
+          className={`min-w-9 rounded-lg border px-3 py-2 text-sm font-medium ${
+            currentPage === page
+              ? "border-cyan-600 bg-cyan-500 text-white"
+              : "border-slate-300 text-slate-600 hover:bg-slate-50"
+          }`}
+        >
+          {page}
+        </button>
+      ))}
+
+      <button
+        type="button"
+        onClick={() =>
+          setCurrentPage((page) =>
+            Math.min(totalPages, page + 1)
+          )
+        }
+        disabled={currentPage === totalPages}
+        className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        Next
+      </button>
+    </div>
+  </div>
+)}
+
+
+
+
+        
+        
       </Panel>
 
       {/* ================================================

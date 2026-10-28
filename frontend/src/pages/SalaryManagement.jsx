@@ -16,6 +16,7 @@ import {
 import api from "../api/axios";
 
 const API = "/salary-payments";
+const PAGE_SIZE = 10;
 
 const MONTHS = [
   "January", "February", "March", "April",
@@ -91,6 +92,7 @@ export default function SalaryManagement() {
   const [month, setMonth] = useState(String(today.getMonth() + 1));
   const [year, setYear] = useState(String(today.getFullYear()));
   const [status, setStatus] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
 
@@ -291,8 +293,38 @@ export default function SalaryManagement() {
     (salary) => salary.status === "Paid"
   ).length;
 
+  const totalPages = Math.max(
+  1,
+  Math.ceil(filteredSalaries.length / PAGE_SIZE)
+);
+
+const startIndex = (currentPage - 1) * PAGE_SIZE;
+
+const paginatedSalaries = filteredSalaries.slice(
+  startIndex,
+  startIndex + PAGE_SIZE
+);
+
+const firstRecord =
+  filteredSalaries.length === 0 ? 0 : startIndex + 1;
+
+const lastRecord = Math.min(
+  startIndex + PAGE_SIZE,
+  filteredSalaries.length
+);
+
+useEffect(() => {
+  setCurrentPage(1);
+}, [search, month, year, status]);
+
+useEffect(() => {
+  if (currentPage > totalPages) {
+    setCurrentPage(totalPages);
+  }
+}, [currentPage, totalPages]);
+
   return (
-    <div className="min-h-full space-y-6 bg-slate-50 p-5 md:p-7">
+    <div className="min-h-full space-y-6 bg-slate-300 p-5 md:p-7">
       {/* Page header */}
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div>
@@ -522,7 +554,7 @@ export default function SalaryManagement() {
               </thead>
 
               <tbody className="divide-y divide-slate-100">
-                {filteredSalaries.map((salary) => {
+                {paginatedSalaries.map((salary) => {
                   const deductions =
                     Number(salary.tax_deduction || 0) +
                     Number(salary.other_deductions || 0);
@@ -638,6 +670,74 @@ export default function SalaryManagement() {
                 })}
               </tbody>
             </table>
+
+{/* Salary Records Pagination */}
+<div className="flex flex-col gap-3 border-t border-gray-200 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+  <p className="text-sm text-gray-500">
+    Showing{" "}
+    <span className="font-medium text-gray-800">
+      {firstRecord}
+    </span>
+    {" "}to{" "}
+    <span className="font-medium text-gray-800">
+      {lastRecord}
+    </span>
+    {" "}of{" "}
+    <span className="font-medium text-gray-800">
+      {filteredSalaries.length}
+    </span>
+    {" "}salary records
+  </p>
+
+  <div className="flex flex-wrap items-center gap-1">
+    <button
+      type="button"
+      onClick={() =>
+        setCurrentPage((page) => Math.max(1, page - 1))
+      }
+      disabled={currentPage === 1 || loading}
+      className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-600 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+    >
+      Previous
+    </button>
+
+    {Array.from(
+      { length: totalPages },
+      (_, index) => index + 1
+    ).map((page) => (
+      <button
+        key={page}
+        type="button"
+        onClick={() => setCurrentPage(page)}
+        disabled={loading}
+        aria-current={
+          currentPage === page ? "page" : undefined
+        }
+        className={`min-w-9 rounded-lg border px-3 py-2 text-sm font-medium transition ${
+          currentPage === page
+            ? "border-indigo-600 bg-indigo-600 text-white"
+            : "border-gray-200 text-gray-600 hover:bg-gray-50"
+        } disabled:cursor-not-allowed disabled:opacity-50`}
+      >
+        {page}
+      </button>
+    ))}
+
+    <button
+      type="button"
+      onClick={() =>
+        setCurrentPage((page) =>
+          Math.min(totalPages, page + 1)
+        )
+      }
+      disabled={currentPage === totalPages || loading}
+      className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-600 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+    >
+      Next
+    </button>
+  </div>
+</div>
+
           </div>
         )}
       </section>

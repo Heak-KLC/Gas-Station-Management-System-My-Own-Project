@@ -12,6 +12,7 @@ import {
   Wrench,
   ChartColumnBig,
   Bell,
+  Settings,
   LogOut,
 } from "lucide-react";
 
@@ -76,6 +77,11 @@ const NAV_SECTIONS = [
         key: "notifications",
         label: "Notifications",
         icon: Bell,
+      },
+            {
+        key: "settings",
+        label: "Settings",
+        icon: Settings,
       },
     ],
   },

@@ -22,6 +22,8 @@ import {
 } from "../api/customerApi";
 
 const TABS = ["Customer List", "Promotions", "Loyalty Levels & Rules"];
+const CUSTOMER_PAGE_SIZE = 5;
+const PROMOTION_PAGE_SIZE = 5;
 
 // Promotions remain mock data until a Promotions API is implemented.
 const initialPromotions = [
@@ -141,6 +143,11 @@ export default function CustomerLoyalty() {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedTierFilter, setSelectedTierFilter] = useState("All");
+  // Customer List pagination
+const [customerPage, setCustomerPage] = useState(1);
+
+// Promotions pagination
+const [promotionPage, setPromotionPage] = useState(1);
 
   // Track loading, submitting and API error/success messages.
   const [loadingCustomers, setLoadingCustomers] = useState(true);
@@ -311,6 +318,34 @@ export default function CustomerLoyalty() {
     return matchesSearch && matchesTier;
   });
 
+  // --------------------------------------------------
+// CUSTOMER LIST PAGINATION
+// --------------------------------------------------
+
+const totalCustomerRecords = filteredCustomers.length;
+
+const totalCustomerPages = Math.max(
+  1,
+  Math.ceil(totalCustomerRecords / CUSTOMER_PAGE_SIZE)
+);
+
+const paginatedCustomers = filteredCustomers.slice(
+  (customerPage - 1) * CUSTOMER_PAGE_SIZE,
+  customerPage * CUSTOMER_PAGE_SIZE
+);
+
+// Reset page when search/filter changes.
+useEffect(() => {
+  setCustomerPage(1);
+}, [searchQuery, selectedTierFilter]);
+
+// Keep the current page valid if records change.
+useEffect(() => {
+  if (customerPage > totalCustomerPages) {
+    setCustomerPage(totalCustomerPages);
+  }
+}, [customerPage, totalCustomerPages]);
+
   // Calculate statistics from the customers currently loaded from the API.
   const totalCustomers = customersList.length;
 
@@ -326,6 +361,29 @@ export default function CustomerLoyalty() {
   const activePromotions = promotionsList.filter(
     (promotion) => promotion.status === "Active"
   ).length;
+
+  // --------------------------------------------------
+// PROMOTIONS PAGINATION
+// --------------------------------------------------
+
+const totalPromotionRecords = promotionsList.length;
+
+const totalPromotionPages = Math.max(
+  1,
+  Math.ceil(totalPromotionRecords / PROMOTION_PAGE_SIZE)
+);
+
+const paginatedPromotions = promotionsList.slice(
+  (promotionPage - 1) * PROMOTION_PAGE_SIZE,
+  promotionPage * PROMOTION_PAGE_SIZE
+);
+
+// Keep the current page valid after creating a promotion.
+useEffect(() => {
+  if (promotionPage > totalPromotionPages) {
+    setPromotionPage(totalPromotionPages);
+  }
+}, [promotionPage, totalPromotionPages]);
 
   return (
     <div className="p-6 space-y-6 bg-gray-300 min-h-screen">
@@ -581,7 +639,7 @@ export default function CustomerLoyalty() {
                       </td>
                     </tr>
                   ) : (
-                    filteredCustomers.map((customer) => (
+                    paginatedCustomers.map((customer) => (
                       <tr
                         key={customer.id ?? customer.customerCode}
                         className="hover:bg-slate-50/80 transition"
@@ -648,6 +706,72 @@ export default function CustomerLoyalty() {
                 </tbody>
               </table>
             </div>
+            {/* Customer List Pagination */}
+{!loadingCustomers && totalCustomerRecords > 0 && (
+  <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4">
+
+    <p className="text-xs text-slate-500">
+      Showing{" "}
+      {(customerPage - 1) * CUSTOMER_PAGE_SIZE + 1}
+      {"–"}
+      {Math.min(
+        customerPage * CUSTOMER_PAGE_SIZE,
+        totalCustomerRecords
+      )}
+      {" of "}
+      {totalCustomerRecords} customers
+    </p>
+
+    {totalCustomerPages > 1 && (
+      <div className="flex items-center gap-1">
+
+        <button
+          type="button"
+          onClick={() =>
+            setCustomerPage((page) => Math.max(1, page - 1))
+          }
+          disabled={customerPage === 1}
+          className="rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Previous
+        </button>
+
+        {Array.from(
+          { length: totalCustomerPages },
+          (_, index) => index + 1
+        ).map((page) => (
+          <button
+            key={page}
+            type="button"
+            onClick={() => setCustomerPage(page)}
+            aria-current={customerPage === page ? "page" : undefined}
+            className={`min-w-8 rounded-lg px-3 py-2 text-xs font-medium ${
+              customerPage === page
+                ? "bg-cyan-500 text-white"
+                : "border border-slate-200 text-slate-600 hover:bg-slate-50"
+            }`}
+          >
+            {page}
+          </button>
+        ))}
+
+        <button
+          type="button"
+          onClick={() =>
+            setCustomerPage((page) =>
+              Math.min(totalCustomerPages, page + 1)
+            )
+          }
+          disabled={customerPage === totalCustomerPages}
+          className="rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Next
+        </button>
+
+      </div>
+    )}
+  </div>
+)}
           </div>
         </div>
       )}
@@ -671,7 +795,7 @@ export default function CustomerLoyalty() {
               </thead>
 
               <tbody className="divide-y divide-slate-50 text-base">
-                {promotionsList.map((promotion) => (
+                {paginatedPromotions.map((promotion) => (
                   <tr
                     key={promotion.id}
                     className="hover:bg-slate-50/80 transition"
@@ -735,7 +859,72 @@ export default function CustomerLoyalty() {
               </tbody>
             </table>
           </div>
+{/* Promotions Pagination */}
+{totalPromotionRecords > 0 && (
+  <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4">
 
+    <p className="text-xs text-slate-500">
+      Showing{" "}
+      {(promotionPage - 1) * PROMOTION_PAGE_SIZE + 1}
+      {"–"}
+      {Math.min(
+        promotionPage * PROMOTION_PAGE_SIZE,
+        totalPromotionRecords
+      )}
+      {" of "}
+      {totalPromotionRecords} promotions
+    </p>
+
+    {totalPromotionPages > 1 && (
+      <div className="flex items-center gap-1">
+
+        <button
+          type="button"
+          onClick={() =>
+            setPromotionPage((page) => Math.max(1, page - 1))
+          }
+          disabled={promotionPage === 1}
+          className="rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Previous
+        </button>
+
+        {Array.from(
+          { length: totalPromotionPages },
+          (_, index) => index + 1
+        ).map((page) => (
+          <button
+            key={page}
+            type="button"
+            onClick={() => setPromotionPage(page)}
+            aria-current={promotionPage === page ? "page" : undefined}
+            className={`min-w-8 rounded-lg px-3 py-2 text-xs font-medium ${
+              promotionPage === page
+                ? "bg-cyan-500 text-white"
+                : "border border-slate-200 text-slate-600 hover:bg-slate-50"
+            }`}
+          >
+            {page}
+          </button>
+        ))}
+
+        <button
+          type="button"
+          onClick={() =>
+            setPromotionPage((page) =>
+              Math.min(totalPromotionPages, page + 1)
+            )
+          }
+          disabled={promotionPage === totalPromotionPages}
+          className="rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Next
+        </button>
+
+      </div>
+    )}
+  </div>
+)}
           <p className="mt-4 text-xs text-slate-400">
             Promotions are currently stored in frontend state only. Changes
             will not persist after refreshing the page.

@@ -61,6 +61,8 @@ const REPORT_TYPES = [
   "equipment_maintenance",
 ];
 
+const PAGE_SIZE = 10;
+
 // Format a number as USD currency.
 const formatCurrency = (value) => {
   const amount = Number(value);
@@ -137,6 +139,7 @@ export default function MasterReports() {
 
   const [reports, setReports] = useState([]);
   const [loadingReports, setLoadingReports] = useState(true);
+  const [currentPage, setCurrentPage] = useState(1);
   const [savingReport, setSavingReport] = useState(false);
   const [reportError, setReportError] = useState("");
   const [summaryError, setSummaryError] = useState("");
@@ -191,6 +194,7 @@ export default function MasterReports() {
       }
 
       setReports(records.map(mapReport));
+      setCurrentPage(1);
     } catch (error) {
       console.error("Failed to load report history:", error);
 
@@ -536,6 +540,42 @@ export default function MasterReports() {
       color: CHART_COLORS.store,
     },
   ].filter((item) => item.value > 0);
+
+  // =====================================================
+// PAGINATION FOR MASTER REPORT LOG TABLE
+// =====================================================
+
+const totalPages = Math.max(
+  1,
+  Math.ceil(reports.length / PAGE_SIZE)
+);
+
+const startIndex = (currentPage - 1) * PAGE_SIZE;
+
+const paginatedReports = reports.slice(
+  startIndex,
+  startIndex + PAGE_SIZE
+);
+
+const firstRecord =
+  reports.length === 0 ? 0 : startIndex + 1;
+
+const lastRecord = Math.min(
+  startIndex + PAGE_SIZE,
+  reports.length
+);
+
+// Return to page 1 when the report history is refreshed.
+useEffect(() => {
+  setCurrentPage(1);
+}, [reports.length]);
+
+// Prevent the current page from exceeding the available pages.
+useEffect(() => {
+  if (currentPage > totalPages) {
+    setCurrentPage(totalPages);
+  }
+}, [currentPage, totalPages]);
 
   // =====================================================
   // RENDER
@@ -957,7 +997,7 @@ export default function MasterReports() {
 
                 <tbody className="divide-y divide-slate-50">
                   {!loadingReports &&
-                    reports.map((report) => (
+                    paginatedReports.map((report) => (
                       <tr
                         key={report.databaseId ?? report.id}
                         className="hover:bg-slate-50/70 transition"
@@ -1024,6 +1064,73 @@ export default function MasterReports() {
                 </tbody>
               </table>
             </div>
+            {/* Pagination */}
+{!loadingReports && !reportError && reports.length > 0 && (
+  <div className="flex flex-col gap-3 border-t border-slate-100 px-3.5 py-4 sm:flex-row sm:items-center sm:justify-between print:hidden">
+    <p className="text-xs text-slate-500">
+      Showing{" "}
+      <span className="font-semibold text-slate-800">
+        {firstRecord}
+      </span>
+      {" "}to{" "}
+      <span className="font-semibold text-slate-800">
+        {lastRecord}
+      </span>
+      {" "}of{" "}
+      <span className="font-semibold text-slate-800">
+        {reports.length}
+      </span>
+      {" "}reports
+    </p>
+
+    <div className="flex flex-wrap items-center gap-1">
+      <button
+        type="button"
+        onClick={() =>
+          setCurrentPage((page) => Math.max(1, page - 1))
+        }
+        disabled={currentPage === 1}
+        className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        Previous
+      </button>
+
+      {Array.from(
+        { length: totalPages },
+        (_, index) => index + 1
+      ).map((page) => (
+        <button
+          key={page}
+          type="button"
+          onClick={() => setCurrentPage(page)}
+          aria-current={
+            currentPage === page ? "page" : undefined
+          }
+          className={`min-w-9 rounded-lg border px-3 py-2 text-xs font-medium transition ${
+            currentPage === page
+              ? "border-cyan-600 bg-cyan-500 text-white"
+              : "border-slate-200 text-slate-600 hover:bg-slate-50"
+          }`}
+        >
+          {page}
+        </button>
+      ))}
+
+      <button
+        type="button"
+        onClick={() =>
+          setCurrentPage((page) =>
+            Math.min(totalPages, page + 1)
+          )
+        }
+        disabled={currentPage === totalPages}
+        className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        Next
+      </button>
+    </div>
+  </div>
+)}
 
             {/* Retry loading report history. */}
             {!loadingReports && reportError && (

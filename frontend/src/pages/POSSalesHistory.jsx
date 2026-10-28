@@ -180,11 +180,13 @@ function getApiRecords(response) {
 | Map Fuel Sale API Data
 |--------------------------------------------------------------------------
 */
+
 function mapFuelSale(sale) {
   const pump = sale.pump ?? {};
   const fuelType = sale.fuelType ?? sale.fuel_type ?? {};
 
   const rawUser =
+    sale.seller ??
     sale.soldBy ??
     sale.sold_by_user ??
     sale.sold_by;
@@ -195,14 +197,16 @@ function mapFuelSale(sale) {
       : {};
 
   const attendant =
-    (typeof rawUser === "string" ? rawUser : null) ??
     user.full_name ??
     user.name ??
-    user.user?.full_name ??
-    (typeof sale.sold_by === "number" ||
-    typeof sale.sold_by === "string"
-      ? `User ${sale.sold_by}`
-      : "—");
+    user.username ??
+    (typeof rawUser === "string" ? rawUser : null) ??
+    (
+      typeof sale.sold_by === "number" ||
+      typeof sale.sold_by === "string"
+        ? `User ${sale.sold_by}`
+        : "—"
+    );
 
   return {
     id: sale.sale_id,
@@ -242,14 +246,11 @@ function mapFuelSale(sale) {
     attendant,
     soldById: sale.sold_by,
     payment: sale.payment_method ?? "",
-
-    // Original payment status.
     status: sale.payment_status ?? "pending",
-
-    // Latest refund status returned by Laravel.
     refundStatus: sale.refund_status ?? null,
   };
 }
+
 
 /*
 |--------------------------------------------------------------------------
@@ -259,25 +260,30 @@ function mapFuelSale(sale) {
 function mapStoreSale(sale) {
   const items = Array.isArray(sale.items) ? sale.items : [];
 
-  const rawUser =
-    sale.soldBy ??
-    sale.sold_by_user ??
-    sale.sold_by;
+  
+const rawUser =
+  sale.seller ??
+  sale.soldBy ??
+  sale.sold_by_user ??
+  sale.sold_by;
 
-  const user =
-    rawUser && typeof rawUser === "object"
-      ? rawUser
-      : {};
+const user =
+  rawUser && typeof rawUser === "object"
+    ? rawUser
+    : {};
 
-  const cashier =
-    (typeof rawUser === "string" ? rawUser : null) ??
-    user.full_name ??
-    user.name ??
-    user.user?.full_name ??
-    (typeof sale.sold_by === "number" ||
+const cashier =
+  user.full_name ??
+  user.name ??
+  user.username ??
+  (typeof rawUser === "string" ? rawUser : null) ??
+  (
+    typeof sale.sold_by === "number" ||
     typeof sale.sold_by === "string"
       ? `User ${sale.sold_by}`
-      : "—");
+      : "—"
+  );
+
 
   const productNames = items
     .map((item) => {
@@ -351,6 +357,76 @@ function canRequestRefund(sale) {
   return isPaid && refundStatus !== "pending";
 }
 
+function Pagination({
+  currentPage,
+  totalPages,
+  onPageChange,
+  totalItems,
+  pageSize,
+}) {
+  const startPage = Math.max(
+    1,
+    Math.min(currentPage - 1, totalPages - 2)
+  );
+
+  const visiblePages = Array.from(
+    { length: Math.min(3, totalPages) },
+    (_, index) => startPage + index
+  );
+
+  const startItem =
+    totalItems === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+
+  const endItem = Math.min(currentPage * pageSize, totalItems);
+
+  return (
+    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3">
+      <p className="text-sm text-slate-500">
+        Showing {startItem}–{endItem} of {totalItems} records
+      </p>
+
+      {totalPages > 1 && (
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => onPageChange(currentPage - 1)}
+            disabled={currentPage === 1}
+            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Previous
+          </button>
+
+          {visiblePages.map((page) => (
+            <button
+              key={page}
+              type="button"
+              onClick={() => onPageChange(page)}
+              aria-current={currentPage === page ? "page" : undefined}
+              className={`min-w-9 rounded-lg px-3 py-1.5 text-sm font-medium transition ${
+                currentPage === page
+                  ? "bg-cyan-500 text-white"
+                  : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              {page}
+            </button>
+          ))}
+
+          <button
+            type="button"
+            onClick={() => onPageChange(currentPage + 1)}
+            disabled={currentPage === totalPages}
+            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Next
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+const SALES_PAGE_SIZE = 5;
+
 /*
 |--------------------------------------------------------------------------
 | Main Component
@@ -371,6 +447,8 @@ export default function POSSalesHistory() {
   */
   const [fuelSales, setFuelSales] = useState([]);
   const [storeSales, setStoreSales] = useState([]);
+  const [fuelPage, setFuelPage] = useState(1);
+const [storePage, setStorePage] = useState(1);
 
   const [fuelLoading, setFuelLoading] = useState(true);
   const [storeLoading, setStoreLoading] = useState(true);
@@ -574,6 +652,51 @@ export default function POSSalesHistory() {
 
     return matchDate && matchPayment && matchUser;
   });
+
+  // Pagination for Fuel Sales
+const fuelTotalPages = Math.max(
+  1,
+  Math.ceil(filteredFuelSales.length / SALES_PAGE_SIZE)
+);
+
+const paginatedFuelSales = filteredFuelSales.slice(
+  (fuelPage - 1) * SALES_PAGE_SIZE,
+  fuelPage * SALES_PAGE_SIZE
+);
+
+// Pagination for Store Sales
+const storeTotalPages = Math.max(
+  1,
+  Math.ceil(filteredStoreSales.length / SALES_PAGE_SIZE)
+);
+
+const paginatedStoreSales = filteredStoreSales.slice(
+  (storePage - 1) * SALES_PAGE_SIZE,
+  storePage * SALES_PAGE_SIZE
+);
+
+// Return to a valid page when filtering reduces the records
+useEffect(() => {
+  if (fuelPage > fuelTotalPages) {
+    setFuelPage(fuelTotalPages);
+  }
+}, [fuelPage, fuelTotalPages]);
+
+useEffect(() => {
+  if (storePage > storeTotalPages) {
+    setStorePage(storeTotalPages);
+  }
+}, [storePage, storeTotalPages]);
+
+// Reset to page 1 when Fuel filters change
+useEffect(() => {
+  setFuelPage(1);
+}, [fuelDate, fuelPump, fuelUser]);
+
+// Reset to page 1 when Store filters change
+useEffect(() => {
+  setStorePage(1);
+}, [storeDate, storePayment, storeUser]);
 
   /*
   |--------------------------------------------------------------------------
@@ -989,7 +1112,7 @@ export default function POSSalesHistory() {
                     </td>
                   </tr>
                 ) : filteredFuelSales.length > 0 ? (
-                  filteredFuelSales.map((sale) => (
+                  paginatedFuelSales.map((sale) => (
                     <tr
                       key={sale.id}
                       className="border-b border-gray-200 hover:bg-slate-50/60"
@@ -1054,6 +1177,13 @@ export default function POSSalesHistory() {
               </tbody>
             </table>
           </div>
+          <Pagination
+  currentPage={fuelPage}
+  totalPages={fuelTotalPages}
+  onPageChange={setFuelPage}
+  totalItems={filteredFuelSales.length}
+  pageSize={SALES_PAGE_SIZE}
+/>
         </Panel>
       )}
 
@@ -1209,7 +1339,7 @@ export default function POSSalesHistory() {
                     </td>
                   </tr>
                 ) : filteredStoreSales.length > 0 ? (
-                  filteredStoreSales.map((sale) => (
+                  paginatedStoreSales.map((sale) => (
                     <tr
                       key={sale.id}
                       className="border-b border-gray-200 hover:bg-slate-50/60"

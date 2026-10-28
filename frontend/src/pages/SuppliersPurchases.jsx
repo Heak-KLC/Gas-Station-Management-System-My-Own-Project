@@ -56,6 +56,8 @@ import {
 } from "../api/purchaseOrderApi";
 
 
+const PO_PAGE_SIZE = 5;
+
 // =====================================================
 // STATIC DASHBOARD DATA
 // =====================================================
@@ -136,6 +138,8 @@ export default function SuppliersPurchases() {
 
   const [purchaseOrders, setPurchaseOrders] =
     useState([]);
+
+  const [poPage, setPoPage] = useState(1);
 
   const [loadingPurchaseOrders, setLoadingPurchaseOrders] =
     useState(true);
@@ -451,6 +455,30 @@ export default function SuppliersPurchases() {
 
   }, []);
 
+
+  // ===================================================
+// PURCHASE ORDER PAGINATION
+// ===================================================
+
+const totalPOs = purchaseOrders.length;
+
+const totalPOPages = Math.max(
+  1,
+  Math.ceil(totalPOs / PO_PAGE_SIZE)
+);
+
+const paginatedPurchaseOrders =
+  purchaseOrders.slice(
+    (poPage - 1) * PO_PAGE_SIZE,
+    poPage * PO_PAGE_SIZE
+  );
+
+// Keep the current page valid after deleting records.
+useEffect(() => {
+  if (poPage > totalPOPages) {
+    setPoPage(totalPOPages);
+  }
+}, [poPage, totalPOPages]);
 
   // ===================================================
   // FILTER SUPPLIERS
@@ -2099,8 +2127,8 @@ export default function SuppliersPurchases() {
                 {/* Purchase Order Rows */}
 
                 {!loadingPurchaseOrders &&
-                  purchaseOrders.map(
-                    (p) => (
+  paginatedPurchaseOrders.map(
+    (p) => (
 
                       <tr
                         key={
@@ -2250,6 +2278,100 @@ export default function SuppliersPurchases() {
             </table>
 
           </div>
+
+          {/* Purchase Order Pagination */}
+
+{!loadingPurchaseOrders &&
+  !purchaseOrderError &&
+  totalPOs > 0 && (
+    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3">
+
+      <p className="text-xs text-slate-500">
+        Showing{" "}
+        {(poPage - 1) * PO_PAGE_SIZE + 1}
+        {"–"}
+        {Math.min(
+          poPage * PO_PAGE_SIZE,
+          totalPOs
+        )}
+        {" of "}
+        {totalPOs} records
+      </p>
+
+      {totalPOPages > 1 && (
+        <div className="flex items-center gap-1">
+
+          <button
+            type="button"
+            onClick={() =>
+              setPoPage((prev) =>
+                Math.max(1, prev - 1)
+              )
+            }
+            disabled={poPage === 1}
+            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Previous
+          </button>
+
+          {Array.from(
+            { length: totalPOPages },
+            (_, index) => index + 1
+          )
+            .filter(
+              (page) =>
+                page === 1 ||
+                page === totalPOPages ||
+                Math.abs(page - poPage) <= 1
+            )
+            .map((page, index, pages) => (
+              <React.Fragment key={page}>
+
+                {index > 0 &&
+                  page - pages[index - 1] > 1 && (
+                    <span className="px-1 text-xs text-slate-400">
+                      ...
+                    </span>
+                  )}
+
+                <button
+                  type="button"
+                  onClick={() => setPoPage(page)}
+                  aria-current={
+                    poPage === page
+                      ? "page"
+                      : undefined
+                  }
+                  className={`min-w-8 rounded-lg px-3 py-1.5 text-xs font-medium transition ${
+                    poPage === page
+                      ? "bg-cyan-500 text-white"
+                      : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                  }`}
+                >
+                  {page}
+                </button>
+
+              </React.Fragment>
+            ))}
+
+          <button
+            type="button"
+            onClick={() =>
+              setPoPage((prev) =>
+                Math.min(totalPOPages, prev + 1)
+              )
+            }
+            disabled={poPage === totalPOPages}
+            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Next
+          </button>
+
+        </div>
+      )}
+
+    </div>
+  )}
 
         </Panel>
 

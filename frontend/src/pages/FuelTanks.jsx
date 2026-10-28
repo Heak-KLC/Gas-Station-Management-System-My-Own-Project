@@ -89,6 +89,77 @@ function Modal({ title, onClose, children }) {
 }
 
 // --------------------------------------------------
+// Reusable Pagination Component
+// --------------------------------------------------
+function Pagination({
+  currentPage,
+  totalItems,
+  pageSize,
+  onPageChange,
+}) {
+  const totalPages = Math.ceil(totalItems / pageSize);
+
+  if (totalPages <= 1) return null;
+
+  const startPage = Math.min(
+    Math.max(1, currentPage - 1),
+    Math.max(1, totalPages - 2)
+  );
+
+  const visiblePages = Array.from(
+    { length: Math.min(3, totalPages) },
+    (_, index) => startPage + index
+  );
+
+  const startItem = (currentPage - 1) * pageSize + 1;
+  const endItem = Math.min(currentPage * pageSize, totalItems);
+
+  return (
+    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4">
+      <p className="text-xs text-slate-500">
+        Showing {startItem}-{endItem} of {totalItems} records
+      </p>
+
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          onClick={() => onPageChange(currentPage - 1)}
+          disabled={currentPage <= 1}
+          className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Previous
+        </button>
+
+        {visiblePages.map((page) => (
+          <button
+            key={page}
+            type="button"
+            onClick={() => onPageChange(page)}
+            aria-current={currentPage === page ? "page" : undefined}
+            className={`min-w-8 rounded-lg border px-3 py-1.5 text-xs ${
+              currentPage === page
+                ? "border-cyan-600 bg-cyan-600 font-semibold text-white"
+                : "border-slate-300 text-slate-600 hover:bg-slate-100"
+            }`}
+          >
+            {page}
+          </button>
+        ))}
+
+        <button
+          type="button"
+          onClick={() => onPageChange(currentPage + 1)}
+          disabled={currentPage >= totalPages}
+          className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Next
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// --------------------------------------------------
 // Empty Tank Form
 // --------------------------------------------------
 const EMPTY_TANK_FORM = {
@@ -179,6 +250,14 @@ export default function FuelTanks() {
   // --------------------------------------------------
   // Refill history is loaded from Laravel/MySQL.
   const [refillsLog, setRefillsLog] = useState([]);
+  // --------------------------------------------------
+// Pagination states
+// --------------------------------------------------
+const INVENTORY_PAGE_SIZE = 5;
+const REFILLS_PAGE_SIZE = 6;
+
+const [inventoryPage, setInventoryPage] = useState(1);
+const [refillsPage, setRefillsPage] = useState(1);
 
   // --------------------------------------------------
   // Add Tank states
@@ -343,6 +422,41 @@ export default function FuelTanks() {
       );
     }
   }
+
+  // ==================================================
+// PAGINATION DATA
+// ==================================================
+
+const inventoryTotalPages = Math.ceil(
+  inventoryRows.length / INVENTORY_PAGE_SIZE
+);
+
+const paginatedInventoryRows = inventoryRows.slice(
+  (inventoryPage - 1) * INVENTORY_PAGE_SIZE,
+  inventoryPage * INVENTORY_PAGE_SIZE
+);
+
+const refillsTotalPages = Math.ceil(
+  refillsLog.length / REFILLS_PAGE_SIZE
+);
+
+const paginatedRefillsLog = refillsLog.slice(
+  (refillsPage - 1) * REFILLS_PAGE_SIZE,
+  refillsPage * REFILLS_PAGE_SIZE
+);
+
+// Keep current pages valid after adding or deleting records.
+useEffect(() => {
+  setInventoryPage((page) =>
+    Math.min(page, Math.max(1, inventoryTotalPages))
+  );
+}, [inventoryTotalPages]);
+
+useEffect(() => {
+  setRefillsPage((page) =>
+    Math.min(page, Math.max(1, refillsTotalPages))
+  );
+}, [refillsTotalPages]);
 
   // =========================================================
   // ADD NEW FUEL TANK
@@ -1125,7 +1239,7 @@ export default function FuelTanks() {
                   </td>
                 </tr>
               ) : (
-                refillsLog.map((r) => (
+                paginatedRefillsLog.map((r) => (
                   <tr
                     key={r.id}
                     className="border-t border-slate-200"
@@ -1150,6 +1264,16 @@ export default function FuelTanks() {
               )}
             </tbody>
           </table>
+          <Pagination
+  currentPage={refillsPage}
+  totalItems={refillsLog.length}
+  pageSize={REFILLS_PAGE_SIZE}
+  onPageChange={(page) => {
+    if (page >= 1 && page <= refillsTotalPages) {
+      setRefillsPage(page);
+    }
+  }}
+/>
         </Panel>
       </div>
 
@@ -1236,7 +1360,7 @@ export default function FuelTanks() {
                   </td>
                 </tr>
               ) : (
-                inventoryRows.map((r) => (
+                paginatedInventoryRows.map((r) => (
                   <tr
                     key={r.id}
                     className="border-b border-slate-200"
@@ -1345,20 +1469,16 @@ export default function FuelTanks() {
           </table>
         </div>
 
-        {/* Pagination UI - still static for now */}
-        <div className="mt-3 flex justify-center gap-1 text-xs text-slate-400">
-          <span className="rounded bg-cyan-500 px-2 py-1 text-white cursor-pointer">
-            1
-          </span>
-
-          <span className="rounded px-2 py-1 hover:bg-slate-200 cursor-pointer">
-            2
-          </span>
-
-          <span className="rounded px-2 py-1 hover:bg-slate-200 cursor-pointer">
-            3
-          </span>
-        </div>
+        <Pagination
+  currentPage={inventoryPage}
+  totalItems={inventoryRows.length}
+  pageSize={INVENTORY_PAGE_SIZE}
+  onPageChange={(page) => {
+    if (page >= 1 && page <= inventoryTotalPages) {
+      setInventoryPage(page);
+    }
+  }}
+/>
       </Panel>
 
       {/* =====================================================

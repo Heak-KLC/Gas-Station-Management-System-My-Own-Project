@@ -278,13 +278,21 @@ const [avatarPreview, setAvatarPreview] = useState("");
   const [logoPreview, setLogoPreview] = useState("");
 
   const currentUser = useMemo(() => {
-    try {
-      // យកព័ត៌មានគណនីពី sessionStorage បើ Login API រក្សាទុកនៅទីនោះ
-      return JSON.parse(sessionStorage.getItem("gas_station_user") || "{}");
-    } catch {
-      return {};
-    }
-  }, []);
+  try {
+    return JSON.parse(
+      sessionStorage.getItem("gas_station_user") || "{}"
+    );
+  } catch {
+    return {};
+  }
+}, []);
+
+const currentRole = String(currentUser.role || "")
+  .trim()
+  .toLowerCase()
+  .replace(/[\s-]+/g, "_");
+
+const isAdmin = currentRole === "admin";
 
   function showNotice(type, message) {
     setNotice({ type, message });
@@ -861,7 +869,13 @@ async function handleSaveProfile(event) {
         {/* Tabs */}
         <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white p-2">
           <div className="flex min-w-max gap-2">
-            {TABS.map(({ id, label, icon: Icon }) => (
+            {TABS
+  .filter(({ id }) =>
+    isAdmin
+      ? true
+      : id === "station"
+  )
+  .map(({ id, label, icon: Icon }) => (
               <button
                 key={id}
                 onClick={() => setActiveTab(id)}
@@ -888,6 +902,7 @@ async function handleSaveProfile(event) {
             {/* TAB 1: Station Info */}
             {activeTab === "station" && (
               <div className="space-y-6">
+                {isAdmin && (
                 <Panel
                   title="Station Information"
                   description="Basic information about your gas station."
@@ -969,6 +984,8 @@ async function handleSaveProfile(event) {
                     </div>
                   </div>
                 </Panel>
+                )}
+                {isAdmin && (
 
                 <Panel
                   title="Business Hours"
@@ -1021,6 +1038,7 @@ async function handleSaveProfile(event) {
                     ))}
                   </div>
                 </Panel>
+                )}
 
                 <Panel
                   title="User Account"
@@ -1029,7 +1047,7 @@ async function handleSaveProfile(event) {
                   <div className="flex flex-wrap items-center justify-between gap-4">
                     <div className="flex items-center gap-3">
                       
-<div className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-full bg-blue-100 text-blue-800">
+<div className="flex h-54 w-54 items-center justify-center overflow-hidden rounded-full bg-blue-100 text-blue-800">
   {profile.avatar_url ? (
     <img
       src={profile.avatar_url}
@@ -1037,7 +1055,7 @@ async function handleSaveProfile(event) {
       className="h-full w-full object-cover"
     />
   ) : (
-    <UserRound size={27} />
+    <UserRound size={107} />
   )}
 </div>
 
@@ -1080,6 +1098,7 @@ async function handleSaveProfile(event) {
                   </div>
                 </Panel>
 
+                {isAdmin && (
                 <div className="flex justify-end">
                   <ActionButton onClick={handleSaveStation} disabled={saving}>
                     {saving ? (
@@ -1090,6 +1109,7 @@ async function handleSaveProfile(event) {
                     Save Station Settings
                   </ActionButton>
                 </div>
+                )}
               </div>
             )}
 

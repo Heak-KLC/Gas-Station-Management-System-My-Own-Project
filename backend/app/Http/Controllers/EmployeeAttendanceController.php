@@ -67,26 +67,41 @@ class EmployeeAttendanceController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'employee_id' => [
-                'required',
-                'integer',
-                'exists:employees,employee_id',
-            ],
-            'date' => ['required', 'date'],
-            'check_in' => ['required', 'date'],
-            'check_out' => ['nullable', 'date'],
-            'status' => [
-                'sometimes',
-                Rule::in([
-                    'present',
-                    'absent',
-                    'late',
-                    'half_day',
-                    'holiday',
-                ]),
-            ],
-            'notes' => ['nullable', 'string'],
-        ]);
+    'employee_id' => [
+        'required',
+        'integer',
+        'exists:employees,employee_id',
+    ],
+    'date' => ['required', 'date'],
+    'status' => [
+        'required',
+        Rule::in([
+            'present',
+            'absent',
+            'late',
+            'half_day',
+            'holiday',
+        ]),
+    ],
+    'check_in' => [
+        'nullable',
+        'required_unless:status,absent,holiday',
+        'date',
+    ],
+    'check_out' => ['nullable', 'date'],
+    'notes' => ['nullable', 'string'],
+]);
+
+if (in_array($validated['status'], ['absent', 'holiday'], true)) {
+    // Database check_in is NOT NULL.
+    // Use midnight as a placeholder for Absent/Holiday.
+    $validated['check_in'] = Carbon::parse($validated['date'])
+        ->startOfDay()
+        ->toDateTimeString();
+
+    $validated['check_out'] = null;
+}
+
 
         // Prevent duplicate attendance for the same employee and date.
         $alreadyExists = EmployeeAttendance::where(
@@ -114,9 +129,6 @@ class EmployeeAttendanceController extends Controller
                 'message' => 'Check-out cannot be earlier than check-in.',
             ], 422);
         }
-
-        // Set the default attendance status.
-        $validated['status'] = $validated['status'] ?? 'present';
 
         // Create attendance and its audit log in one transaction.
         $attendance = DB::transaction(function () use (
@@ -217,13 +229,49 @@ class EmployeeAttendanceController extends Controller
             ], 422);
         }
 
-        // Use the submitted values or keep the existing values.
-        $checkIn = $validated['check_in']
-            ?? $attendance->check_in;
+        
+$status = $validated['status'] ?? $attendance->status;
 
-        $checkOut = array_key_exists('check_out', $validated)
-            ? $validated['check_out']
-            : $attendance->check_out;
+$date = $validated['date']
+    ?? Carbon::parse($attendance->date)->toDateString();
+
+if (in_array($status, ['absent', 'holiday'], true)) {
+    // Keep check_in compatible with the NOT NULL database column.
+    $validated['check_in'] = Carbon::parse($date)
+        ->startOfDay()
+        ->toDateTimeString();
+
+    $validated['check_out'] = null;
+} else {
+    // Use submitted values or keep the existing values.
+    $checkIn = $validated['check_in']
+        ?? $attendance->check_in;
+
+    $checkOut = array_key_exists('check_out', $validated)
+        ? $validated['check_out']
+        : $attendance->check_out;
+
+    if ($checkIn === null) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Check In time is required.',
+        ], 422);
+    }
+
+    // Validate Check Out only when both values are available.
+    if ($checkOut !== null) {
+        $checkInTime = Carbon::parse($checkIn);
+        $checkOutTime = Carbon::parse($checkOut);
+
+        if ($checkOutTime->lt($checkInTime)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Check-out cannot be earlier than check-in.',
+            ], 422);
+        }
+    }
+}
+
 
         // Check-out must not be earlier than check-in.
         if (

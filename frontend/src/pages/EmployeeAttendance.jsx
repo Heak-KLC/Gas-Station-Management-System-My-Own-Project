@@ -175,9 +175,12 @@ export default function EmployeeAttendance() {
   // Search, Filter & Pagination States
   // ---------------------------------------------------
 
-  const [searchQuery, setSearchQuery] = useState("");
-  const [dateFilter, setDateFilter] = useState("Today");
-  const [visibleCount, setVisibleCount] = useState(10);
+const [searchQuery, setSearchQuery] = useState("");
+const [dateFilter, setDateFilter] = useState("Today");
+
+// Pagination
+const PAGE_SIZE = 10;
+const [currentPage, setCurrentPage] = useState(1);
 
   // ---------------------------------------------------
   // Modal States
@@ -359,45 +362,53 @@ export default function EmployeeAttendance() {
         is_active: true,
       });
 
-      const createdEmployee = result?.data;
+      
+const createdEmployee = result?.data;
+let scheduleFailed = false;
 
-      // បើ API បញ្ជូន Employee ID ត្រឡប់មកវិញ
-      // អាចបង្កើត Schedule ដំបូងសម្រាប់ថ្ងៃនេះបាន។
-      if (createdEmployee?.employee_id && newEmp.shift) {
-        try {
-          const timeParts = newEmp.shift.split(": ");
-          const timeRange = timeParts.length > 1
-            ? timeParts.slice(1).join(": ")
-            : newEmp.shift;
+if (createdEmployee?.employee_id && newEmp.shift) {
+  try {
+    const timeParts = newEmp.shift.split(": ");
+    const timeRange =
+      timeParts.length > 1
+        ? timeParts.slice(1).join(": ")
+        : newEmp.shift;
 
-          const rangeParts = timeRange.split("-");
+    const rangeParts = timeRange.split("-");
 
-          if (rangeParts.length === 2) {
-            await createWorkSchedule({
-              employee_id: Number(createdEmployee.employee_id),
-              day_of_week: new Date().getDay(),
-              shift_start: convertTo24Hour(rangeParts[0]),
-              shift_end: convertTo24Hour(rangeParts[1]),
-              is_active: true,
-            });
-          }
-        } catch (scheduleError) {
-          // បុគ្គលិកអាចបានបង្កើតរួច ទោះ Schedule បរាជ័យក៏ដោយ។
-          console.error("Employee created but schedule failed:", scheduleError);
+    if (rangeParts.length !== 2) {
+      throw new Error("Invalid shift time range.");
+    }
 
-          setApiMessage(
-            "Employee created, but the initial schedule could not be saved. You can assign it later."
-          );
-          setApiMessageType("error");
-        }
-      }
+    await createWorkSchedule({
+      employee_id: Number(createdEmployee.employee_id),
+      day_of_week: new Date().getDay(),
+      shift_start: convertTo24Hour(rangeParts[0]),
+      shift_end: convertTo24Hour(rangeParts[1]),
+      is_active: true,
+    });
+  } catch (scheduleError) {
+    console.error(
+      "Employee created but schedule failed:",
+      scheduleError
+    );
 
-      await loadData();
+    scheduleFailed = true;
+  }
+}
 
-      if (!apiMessage) {
-        setApiMessage("Employee created successfully.");
-        setApiMessageType("success");
-      }
+await loadData();
+
+if (scheduleFailed) {
+  setApiMessage(
+    "Employee created successfully, but the initial schedule failed. Please assign the schedule manually."
+  );
+  setApiMessageType("error");
+} else {
+  setApiMessage("Employee created successfully.");
+  setApiMessageType("success");
+}
+
 
       setNewEmp({
         name: "",
@@ -577,42 +588,49 @@ export default function EmployeeAttendance() {
       const today = getTodayString();
       const selectedStatus = selectedEmp.status;
 
-      // បម្លែងម៉ោងដែលអ្នកប្រើវាយទៅជា HH:mm:ss។
-      const convertInputTime = (value) => {
-        if (!value || value === "—") return null;
+      
+const convertInputTime = (value, date = today) => {
+  if (!value || value === "—") return null;
 
-        // Input type="time" ប្រើ HH:mm។
-        if (/^\d{2}:\d{2}$/.test(value)) {
-          return `${today} ${value}:00`;
-        }
+  let time24;
 
-        // គាំទ្រទម្រង់ម៉ោងដែលបង្ហាញនៅក្នុង UI ផងដែរ។
-        if (/AM|PM/i.test(value)) {
-          return `${today} ${convertTo24Hour(value)}:00`;
-        }
+  if (/^\d{2}:\d{2}$/.test(value)) {
+    time24 = value;
+  } else if (/AM|PM/i.test(value)) {
+    time24 = convertTo24Hour(value);
+  } else {
+    throw new Error("Please enter time in HH:mm format.");
+  }
 
-        throw new Error("Please enter time in HH:mm format.");
-      };
+  return `${date} ${time24}:00`;
+};
 
-      const checkIn = convertInputTime(selectedEmp.in);
-      const checkOut = convertInputTime(selectedEmp.out);
+const checkIn = convertInputTime(selectedEmp.in);
+let checkOut = convertInputTime(selectedEmp.out);
 
-      // Database កំណត់ check_in ជា NOT NULL។
-      if (!checkIn) {
-        setApiMessage("Check In time is required.");
-        setApiMessageType("error");
-        return;
-      }
+if (!checkIn) {
+  setApiMessage("Check In time is required.");
+  setApiMessageType("error");
+  return;
+}
 
-      if (
-        checkOut &&
-        new Date(checkOut.replace(" ", "T")) <
-          new Date(checkIn.replace(" ", "T"))
-      ) {
-        setApiMessage("Check Out cannot be earlier than Check In.");
-        setApiMessageType("error");
-        return;
-      }
+if (checkOut) {
+  const checkInDate = new Date(checkIn.replace(" ", "T"));
+  const checkOutDate = new Date(checkOut.replace(" ", "T"));
+
+  if (checkOutDate < checkInDate) {
+    const tomorrow = new Date(`${today}T00:00:00`);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const nextDate =
+      `${tomorrow.getFullYear()}-` +
+      `${String(tomorrow.getMonth() + 1).padStart(2, "0")}-` +
+      `${String(tomorrow.getDate()).padStart(2, "0")}`;
+
+    checkOut = convertInputTime(selectedEmp.out, nextDate);
+  }
+}
+
 
       const attendanceData = {
         employee_id: Number(selectedEmp.employeeDbId),
@@ -668,6 +686,30 @@ export default function EmployeeAttendance() {
     return matchesSearch && matchesDate;
   });
 
+  // ចំនួនទំព័រសរុប
+const totalPages = Math.max(
+  1,
+  Math.ceil(filteredEmployees.length / PAGE_SIZE)
+);
+
+// ទិន្នន័យបុគ្គលិកសម្រាប់ទំព័របច្ចុប្បន្ន
+const paginatedEmployees = filteredEmployees.slice(
+  (currentPage - 1) * PAGE_SIZE,
+  currentPage * PAGE_SIZE
+);
+
+// ចំនួនទំព័រត្រូវកែតាមចំនួនលទ្ធផលក្រោយ Search/Filter
+useEffect(() => {
+  setCurrentPage(1);
+}, [searchQuery, dateFilter]);
+
+// ការពារកុំឱ្យ currentPage លើសទំព័រដែលមាន
+useEffect(() => {
+  if (currentPage > totalPages) {
+    setCurrentPage(totalPages);
+  }
+}, [currentPage, totalPages]);
+
   const presentCount = employeeList.filter(
     (e) => e.status === "Present"
   ).length;
@@ -676,9 +718,11 @@ export default function EmployeeAttendance() {
     (e) => e.status === "Late"
   ).length;
 
-  const absentCount = employeeList.filter(
-    (e) => e.status === "Absent" || e.status === "Holiday"
-  ).length;
+  
+const absentCount = employeeList.filter(
+  (e) => e.status === "Absent"
+).length;
+
 
   // ===================================================
   // RENDER
@@ -810,10 +854,10 @@ export default function EmployeeAttendance() {
         <div className="mb-4 flex flex-wrap items-center gap-3">
           <button
             onClick={() => {
-              setSearchQuery("");
-              setDateFilter("Today");
-              setVisibleCount(10);
-            }}
+  setSearchQuery("");
+  setDateFilter("Today");
+  setCurrentPage(1);
+}}
             className="rounded-xl bg-cyan-50 px-3 py-1.5 text-sm font-semibold text-cyan-800 border border-cyan-100 hover:bg-cyan-200 transition"
           >
             Advanced Filter
@@ -863,7 +907,7 @@ export default function EmployeeAttendance() {
             </thead>
 
             <tbody className="divide-y divide-slate-200">
-              {filteredEmployees.slice(0, visibleCount).map((e) => (
+              {paginatedEmployees.map((e) => (
                 <tr
                   key={e.employeeDbId}
                   className="hover:bg-slate-50/60 transition text-sm"
@@ -965,35 +1009,69 @@ export default function EmployeeAttendance() {
         </div>
 
         {/* Dynamic Pagination */}
-        <div className="mt-4 pt-3 border-t border-slate-100 flex justify-between items-center text-base text-slate-600">
-          <div>
-            Showing{" "}
-            <span className="font-semibold text-slate-600">
-              {Math.min(visibleCount, filteredEmployees.length)}
-            </span>{" "}
-            of{" "}
-            <span className="font-semibold text-slate-600">
-              {filteredEmployees.length}
-            </span>{" "}
-            staff members
-          </div>
+        
+{/* Numbered Pagination */}
+<div className="mt-4 pt-3 border-t border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-3 text-sm text-slate-600">
+  <div>
+    Showing{" "}
+    <span className="font-semibold text-slate-800">
+      {filteredEmployees.length === 0
+        ? 0
+        : (currentPage - 1) * PAGE_SIZE + 1}
+      {"–"}
+      {Math.min(currentPage * PAGE_SIZE, filteredEmployees.length)}
+    </span>{" "}
+    of{" "}
+    <span className="font-semibold text-slate-800">
+      {filteredEmployees.length}
+    </span>{" "}
+    staff members
+  </div>
 
-          {visibleCount < filteredEmployees.length ? (
-            <button
-              onClick={() => setVisibleCount((prev) => prev + 5)}
-              className="font-semibold text-cyan-600 hover:underline transition"
-            >
-              Show More ↓
-            </button>
-          ) : visibleCount > 10 ? (
-            <button
-              onClick={() => setVisibleCount(10)}
-              className="font-semibold text-slate-500 hover:underline transition"
-            >
-              Show Less ↑
-            </button>
-          ) : null}
-        </div>
+  <div className="flex items-center gap-1">
+    <button
+      type="button"
+      onClick={() =>
+        setCurrentPage((page) => Math.max(1, page - 1))
+      }
+      disabled={currentPage === 1 || isLoading}
+      className="rounded-lg border border-slate-300 px-3 py-2 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+    >
+      Previous
+    </button>
+
+    {Array.from({ length: totalPages }, (_, index) => index + 1).map(
+      (page) => (
+        <button
+          key={page}
+          type="button"
+          onClick={() => setCurrentPage(page)}
+          disabled={isLoading}
+          aria-current={currentPage === page ? "page" : undefined}
+          className={`min-w-9 rounded-lg border px-3 py-2 transition ${
+            currentPage === page
+              ? "border-cyan-500 bg-cyan-500 text-white font-semibold"
+              : "border-slate-300 bg-white hover:bg-slate-50"
+          } disabled:cursor-not-allowed disabled:opacity-60`}
+        >
+          {page}
+        </button>
+      )
+    )}
+
+    <button
+      type="button"
+      onClick={() =>
+        setCurrentPage((page) => Math.min(totalPages, page + 1))
+      }
+      disabled={currentPage === totalPages || isLoading}
+      className="rounded-lg border border-slate-300 px-3 py-2 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+    >
+      Next
+    </button>
+  </div>
+</div>
+
       </Panel>
 
       {/* =================================================

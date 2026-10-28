@@ -208,6 +208,11 @@ const ROLES = {
         title: "Notifications",
         Component: MgrNotifications,
       },
+
+      settings: {
+  title: "Settings",
+  Component: Settings,
+},
     },
   },
 
@@ -243,6 +248,11 @@ const ROLES = {
         title: "Shift Handover",
         Component: CashShiftHandover,
       },
+
+      settings: {
+  title: "Settings",
+  Component: Settings,
+},
     },
   },
 
@@ -273,6 +283,11 @@ const ROLES = {
         title: "Maintenance Report",
         Component: AttMaintenanceReport,
       },
+
+      settings: {
+  title: "Settings",
+  Component: Settings,
+},
     },
   },
 };
